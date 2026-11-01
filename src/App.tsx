@@ -56,6 +56,44 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const handleLogout = () => {
+    StorageService.logout();
+    setCurrentUser(null);
+    showToast("Sessão finalizada por inatividade ou segurança.");
+  };
+
+  // ---------------------------------------------------------------------------
+  // REGRA DE NEGÓCIO: Timeout por Inatividade (30 minutos)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      // 30 minutos em milissegundos (30 * 60 * 1000)
+      timeoutId = setTimeout(() => {
+        handleLogout();
+      }, 30 * 60 * 1000);
+    };
+
+    const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"];
+
+    events.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentUser]);
+
   // Carga inicial dos dados
   useEffect(() => {
     const data = StorageService.init();
@@ -83,12 +121,6 @@ export default function App() {
 
     return { vencidos, criticos, atencao };
   }, [certificates, config]);
-
-  const handleLogout = () => {
-    StorageService.logout();
-    setCurrentUser(null);
-    showToast("Sessão finalizada com sucesso.");
-  };
 
   // Atualização dos dados cadastrais do próprio usuário
   const handleSaveProfile = (updatedData: { nome: string; email: string; cargo: string }) => {
