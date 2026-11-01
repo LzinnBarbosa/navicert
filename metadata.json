@@ -1,0 +1,6 @@
+{
+  "name": "NavCert – Gestão de Certificados Marítimos",
+  "description": "Sistema profissional para controle de certificados navais (CSN, Borda Livre, Vistoria de Casco e Máquinas), alertas de vencimento, gestão de frota e consultor marítimo inteligente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
