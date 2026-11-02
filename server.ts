@@ -40,7 +40,7 @@ app.use(helmet({
   contentSecurityPolicy: false // Desativado para permitir assets estáticos da build do Vite
 }));
 
-// Proteção de Origem (CORS) Flexível para Dev e Produção no Render
+// Proteção de Origem (CORS) aplicada EXCLUSIVAMENTE às rotas da API
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -49,18 +49,25 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || ''
 ].filter(Boolean);
 
-app.use(cors({
+const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    if (
+      !origin || 
+      allowedOrigins.includes(origin) || 
+      origin.endsWith('.onrender.com') ||
+      process.env.NODE_ENV !== 'production'
+    ) {
       callback(null, true);
     } else {
-      callback(new Error('Acesso bloqueado pela política de CORS do NavCert.'));
+      callback(null, false); // Retorna false em vez de disparar Error() para evitar crash 500 no Express
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+app.use('/api', cors(corsOptions));
 
 // Limitador de requisições por IP (Rate Limiter: máx 100 req por 15 minutos)
 const apiLimiter = rateLimit({
