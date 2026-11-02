@@ -1,11 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Certificate, Vessel } from '../types/maritime';
-import { X, Calendar, FileCheck, Shield, Wrench, Anchor, Gauge } from 'lucide-react';
+import { uploadCertificadoPDF } from '../lib/uploadService';
+import { 
+  X, 
+  Calendar, 
+  FileCheck, 
+  Shield, 
+  Wrench, 
+  Anchor, 
+  Gauge, 
+  Upload, 
+  Loader2 
+} from 'lucide-react';
 
 interface CertificateFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (cert: Partial<Certificate>) => void;
+  onSave: (cert: Partial<Certificate>) => void | Promise<void>;
   vessels: Vessel[];
   initialData?: Partial<Certificate>;
 }
@@ -58,14 +69,9 @@ const SOCIEDADES_CLASSIFICADORAS = [
   'Bureau Colombo',
   'Auto Ship',
   'Exata Calibração',
-  'RGF Tecnologia Naval',
+  'RGF-Tecnologia Naval',
   'RBNA (Registro Brasileiro de Navios e Aeronaves)',
-  'Capitania Fluvial / Marinha do Brasil',
-  'DNV',
-  'ABS (American Bureau of Shipping)',
-  'Bureau Veritas (BV)',
-  'RINA',
-  'Lloyd\'s Register'
+  'CFAOC (Capitania Fluvial da Amazonia Ocidental) / Marinha do Brasil',
 ];
 
 export const CertificateFormModal: React.FC<CertificateFormModalProps> = ({
@@ -101,8 +107,51 @@ export const CertificateFormModal: React.FC<CertificateFormModalProps> = ({
     continuidade_eletrica: '',
     laboratorio_calibracao: '',
     observacoes: '',
+    url_documento: '',
+    arquivo_path: '',
     ...initialData
   });
+
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  // Sincroniza dados iniciais quando o modal abre ou initialData muda
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        vessel_id: '',
+        categoria: 'CERTIFICADO',
+        tipo: 'CSN',
+        numero: '',
+        tipo_vistoria: '1ª Vistoria Anual',
+        data_emissao: new Date().toISOString().split('T')[0],
+        data_validade: '',
+        orgao_emissor: 'Bureau Colombo',
+        responsavel_tecnico: '',
+        fabricante_equipamento: '',
+        modelo_equipamento: '',
+        numero_serie_equipamento: '',
+        faixa_medicao: '',
+        tracao_estatica_ton: '',
+        marca_agulha: '',
+        serie_agulha: '',
+        local_compensacao: '',
+        pressao_trabalho: '',
+        pressao_teste: '',
+        numero_art: '',
+        lacre_tag: '',
+        tanque_vinculado: '',
+        continuidade_eletrica: '',
+        laboratorio_calibracao: '',
+        observacoes: '',
+        url_documento: '',
+        arquivo_path: '',
+        ...initialData
+      });
+      setFileToUpload(null);
+      setIsUploading(false);
+    }
+  }, [isOpen, initialData]);
 
   useEffect(() => {
     const t = formData.tipo;
@@ -123,10 +172,35 @@ export const CertificateFormModal: React.FC<CertificateFormModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Submissão assíncrona com upload de documento PDF/Imagem
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
-    onClose();
+    try {
+      setIsUploading(true);
+      let finalUrl = formData.url_documento || '';
+      let finalPath = formData.arquivo_path || '';
+
+      // Se o usuário selecionou um arquivo local, efetua o upload no Supabase Storage
+      if (fileToUpload) {
+        const vesselTarget = formData.vessel_id || 'geral';
+        const uploadRes = await uploadCertificadoPDF(fileToUpload, vesselTarget);
+        finalUrl = uploadRes.url;
+        finalPath = uploadRes.path;
+      }
+
+      await onSave({
+        ...formData,
+        url_documento: finalUrl,
+        arquivo_path: finalPath,
+      });
+
+      onClose();
+    } catch (error: any) {
+      console.error("Erro ao salvar certificado:", error);
+      alert(`Erro no upload/salvamento do documento: ${error.message || 'Falha na operação'}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const isNavalCertificate = ['CSN', 'BL', 'CASCO', 'MAQUINAS'].includes(formData.tipo);
@@ -142,7 +216,12 @@ export const CertificateFormModal: React.FC<CertificateFormModalProps> = ({
             <FileCheck className="w-5 h-5 text-teal-400" />
             {initialData?.id ? 'Editar Registro' : 'Cadastrar Documento / Teste Técnico'}
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition cursor-pointer">
+          <button 
+            type="button"
+            onClick={onClose} 
+            disabled={isUploading}
+            className="text-slate-400 hover:text-white transition cursor-pointer disabled:opacity-50"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -524,24 +603,97 @@ export const CertificateFormModal: React.FC<CertificateFormModalProps> = ({
             </div>
           </div>
 
-          {/* BOTÕES DE AÇÃO */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-teal-900/50">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-lg cursor-pointer"
-            >
-              Salvar Registro
-            </button>
+          {/* SEÇÃO DE ANEXO DE LAUDO / CERTIFICADO DIGITALIZADO (SUPABASE STORAGE) */}
+          <div className="bg-[#030a12] p-3.5 rounded-xl border border-teal-800/50 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-teal-300 flex items-center gap-1.5">
+                <Upload className="w-4 h-4 text-teal-400" />
+                DOCUMENTO DIGITALIZADO / LAUDO (PDF OU IMAGEM)
+              </label>
+              {formData.url_documento && (
+                <a
+                  href={formData.url_documento}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-teal-400 underline hover:text-teal-300 font-medium"
+                >
+                  Ver documento atual
+                </a>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                id="file-upload-input"
+                className="hidden"
+                disabled={isUploading}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setFileToUpload(e.target.files[0]);
+                  }
+                }}
+              />
+              <label
+                htmlFor="file-upload-input"
+                className={`px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold rounded-lg cursor-pointer flex items-center justify-center gap-2 transition-all text-xs ${
+                  isUploading ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
+                <Upload className="w-4 h-4" />
+                {fileToUpload ? 'Alterar Arquivo' : 'Selecionar PDF / Imagem'}
+              </label>
+
+              <span className="text-slate-300 truncate text-xs flex-1 bg-[#0b1726] px-3 py-2.5 rounded-lg border border-slate-800">
+                {fileToUpload 
+                  ? `Arquivo selecionado: ${fileToUpload.name}` 
+                  : (formData.url_documento ? 'Possui documento já anexado' : 'Nenhum arquivo selecionado')}
+              </span>
+            </div>
           </div>
+
+          {/* BOTÕES DE AÇÃO COM INDICADOR DE UPLOAD */}
+          <div className="flex justify-between items-center pt-4 border-t border-teal-900/50">
+            <div className="text-teal-400 text-xs font-semibold">
+              {isUploading && (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
+                  <span>Enviando documento ao Supabase Storage...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isUploading}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isUploading}
+                className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-lg cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Salvar Registro'
+                )}
+              </button>
+            </div>
+          </div>
+
         </form>
       </div>
     </div>
   );
 };
+
+export default CertificateFormModal;
