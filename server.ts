@@ -23,8 +23,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// Leitura correta da porta: respeita a flag --port, a variável PORT do Render ou o padrão 3000
 const portArgIndex = process.argv.indexOf('--port');
-const port = portArgIndex !== -1 ? parseInt(process.argv[portArgIndex + 1], 10) : 3000;
+const port = portArgIndex !== -1 
+  ? parseInt(process.argv[portArgIndex + 1], 10) 
+  : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
 // Configuração do Cliente Resend para Envio de E-mails Regulatórios
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
@@ -40,6 +44,7 @@ app.use(helmet({
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:3001',
   process.env.FRONTEND_URL || ''
 ].filter(Boolean);
 
@@ -682,7 +687,7 @@ async function executarVerificacaoAlertasEmail() {
           ` : ''}
 
           <div style="margin-top: 28px; padding: 16px; background-color: #f8fafc; border-radius: 8px; font-size: 12px; text-align: center; color: #64748b; border: 1px dashed #cbd5e1;">
-            Acesse o sistema <a href="${process.env.FRONTEND_URL || 'https://navcert.onrender.com'}" style="color: #0284c7; text-decoration: none; font-weight: bold;">NavCert SaaS</a> para visualizar os laudos em PDF e atualizar o cadastro.
+            Acesse o sistema <a href="${process.env.FRONTEND_URL || 'https://navicert.onrender.com'}" style="color: #0284c7; text-decoration: none; font-weight: bold;">NavCert SaaS</a> para visualizar os laudos em PDF e atualizar o cadastro.
           </div>
         </div>
       </div>
@@ -757,22 +762,32 @@ app.post('/api/orientacao', async (req, res) => {
   }
 });
 
-// --- 9. INICIALIZAÇÃO DO SERVIDOR ---
+// --- 9. INICIALIZAÇÃO DO SERVIDOR E ARQUIVOS ESTÁTICOS ---
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
+  const distPath = path.resolve(process.cwd(), 'dist');
 
   if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.log('⚠️ Erro ao iniciar middleware do Vite. Alternando para servir a pasta dist estática.');
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.resolve(distPath, 'index.html'));
+      });
+    }
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    // Servir aplicação estática compilada (Single Page Application - React/Vite)
+    app.use(express.static(distPath));
     app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
 
