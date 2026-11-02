@@ -25,7 +25,7 @@ import { ReportsView } from "./views/ReportsView";
 import { ConsultantView } from "./views/ConsultantView";
 import { SettingsView } from "./views/SettingsView";
 import { UsersView } from "./views/UsersView";
-import { Anchor, ShieldCheck } from "lucide-react";
+import { Anchor, ShieldCheck, Loader2 } from "lucide-react";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("painel");
@@ -34,6 +34,7 @@ export default function App() {
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [config, setConfig] = useState<PrazosConfig>(PRAZOS_PADRAO);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Modal de perfil do usuário
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -94,16 +95,50 @@ export default function App() {
     };
   }, [currentUser]);
 
-  // Carga inicial dos dados
+  // ---------------------------------------------------------------------------
+  // CARGA INICIAL ASSÍNCRONA DOS DADOS (API REST + LOCALSTORAGE FALLBACK)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const data = StorageService.init();
-    setVessels(data.vessels);
-    setCertificates(data.certificates);
-    setConfig(data.config);
-    setUsers(StorageService.getUsers());
-    if (data.currentUser) {
-      setCurrentUser(data.currentUser);
-    }
+    const carregarDadosIniciais = async () => {
+      setIsLoading(true);
+      try {
+        const localData = StorageService.init();
+        setConfig(localData.config);
+        setUsers(StorageService.getUsers());
+        if (localData.currentUser) {
+          setCurrentUser(localData.currentUser);
+        }
+
+        // Tenta buscar dados atualizados diretamente do PostgreSQL/Supabase via API
+        const embarcacoesAPI = await StorageService.carregarEmbarcacoesAPI();
+        if (embarcacoesAPI && embarcacoesAPI.length > 0) {
+          setVessels(embarcacoesAPI);
+
+          // Agrupa os certificados contidos nas embarcações
+          const certsConsolidados: Certificate[] = [];
+          embarcacoesAPI.forEach((emb: any) => {
+            if (Array.isArray(emb.certificados)) {
+              certsConsolidados.push(...emb.certificados);
+            }
+          });
+
+          if (certsConsolidados.length > 0) {
+            setCertificates(certsConsolidados);
+          } else {
+            setCertificates(localData.certificates);
+          }
+        } else {
+          setVessels(localData.vessels);
+          setCertificates(localData.certificates);
+        }
+      } catch (err) {
+        console.warn("Falha ao inicializar com dados da API, mantendo cache local:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    carregarDadosIniciais();
   }, []);
 
   // Cálculo do resumo de alertas para badges e header
@@ -136,76 +171,99 @@ export default function App() {
     showToast("Dados cadastrais do usuário atualizados com sucesso!");
   };
 
-  // Handlers de Embarcações
-  const handleSaveVessel = (vessel: Vessel) => {
-    let updated: Vessel[];
-    const exists = vessels.some((v) => v.id === vessel.id);
-    if (exists) {
-      updated = vessels.map((v) => (v.id === vessel.id ? vessel : v));
-      showToast(`Embarcação "${vessel.nome}" atualizada com sucesso.`);
-    } else {
-      updated = [vessel, ...vessels];
-      showToast(`Embarcação "${vessel.nome}" cadastrada com sucesso.`);
+  // ---------------------------------------------------------------------------
+  // HANDLERS ASSÍNCRONOS DE EMBARCAÇÕES (API)
+  // ---------------------------------------------------------------------------
+  const handleSaveVessel = async (vessel: Vessel) => {
+    try {
+      const exists = vessels.some((v) => String(v.id) === String(vessel.id));
+      if (exists) {
+        await StorageService.atualizarEmbarcacaoAPI(vessel.id, vessel);
+        showToast(`Embarcação "${vessel.nome}" atualizada no servidor.`);
+      } else {
+        await StorageService.salvarEmbarcacaoAPI(vessel);
+        showToast(`Embarcação "${vessel.nome}" cadastrada com sucesso.`);
+      }
+
+      // Recarrega lista sincronizada
+      const frotaAtualizada = await StorageService.carregarEmbarcacoesAPI();
+      setVessels(frotaAtualizada);
+    } catch (error: any) {
+      console.error("Erro ao salvar embarcação:", error);
+      showToast(`Erro ao salvar embarcação: ${error.message || "Verifique a conexão"}`);
     }
-    setVessels(updated);
-    StorageService.saveVessels(updated);
   };
 
-  const handleDeleteVessel = (vesselId: string) => {
-    const vessel = vessels.find((v) => v.id === vesselId);
+  const handleDeleteVessel = async (vesselId: string) => {
+    const vessel = vessels.find((v) => String(v.id) === String(vesselId));
     if (!vessel) return;
 
     if (window.confirm(`Excluir a embarcação "${vessel.nome}" e todos os seus certificados associados?`)) {
-      const updatedVessels = vessels.filter((v) => v.id !== vesselId);
-      const updatedCerts = certificates.filter((c) => c.vessel_id !== vesselId);
+      try {
+        await StorageService.deletarEmbarcacaoAPI(vesselId);
+        
+        const frotaAtualizada = await StorageService.carregarEmbarcacoesAPI();
+        setVessels(frotaAtualizada);
+        setCertificates((prev) => prev.filter((c) => String(c.vessel_id || (c as any).embarcacao_id) !== String(vesselId)));
 
-      setVessels(updatedVessels);
-      setCertificates(updatedCerts);
-
-      StorageService.saveVessels(updatedVessels);
-      StorageService.saveCertificates(updatedCerts);
-
-      if (selectedVesselForDetail?.id === vesselId) {
-        setSelectedVesselForDetail(null);
+        if (selectedVesselForDetail && String(selectedVesselForDetail.id) === String(vesselId)) {
+          setSelectedVesselForDetail(null);
+        }
+        showToast(`Embarcação "${vessel.nome}" excluída.`);
+      } catch (error: any) {
+        console.error("Erro ao excluir embarcação:", error);
+        showToast(`Erro ao excluir: ${error.message || "Falha na requisição"}`);
       }
-      showToast(`Embarcação "${vessel.nome}" excluída.`);
     }
   };
 
-  // Handlers de Certificados
-  const handleSaveCertificate = (cert: Partial<Certificate>) => {
-    let updated: Certificate[];
-    const exists = certificates.some((c) => c.id === cert.id);
-    if (exists) {
-      updated = certificates.map((c) => (c.id === cert.id ? { ...c, ...cert } as Certificate : c));
-      showToast(`Certificado ${cert.tipo} atualizado.`);
-    } else {
-      const newCert: Certificate = {
-        id: cert.id || String(Date.now()),
-        vessel_id: cert.vessel_id || '',
-        tipo: cert.tipo || 'CSN',
-        numero: cert.numero || '',
-        data_validade: cert.data_validade || '',
-        orgao_emissor: cert.orgao_emissor || '',
-        created_at: new Date().toISOString(),
-        ...cert
-      };
-      updated = [newCert, ...certificates];
-      showToast(`Certificado ${cert.tipo} registrado.`);
+  // ---------------------------------------------------------------------------
+  // HANDLERS ASSÍNCRONOS DE CERTIFICADOS (API)
+  // ---------------------------------------------------------------------------
+  const handleSaveCertificate = async (cert: Partial<Certificate>) => {
+    try {
+      const exists = cert.id && certificates.some((c) => String(c.id) === String(cert.id));
+      if (exists) {
+        await StorageService.atualizarCertificadoAPI(cert.id!, cert);
+        showToast(`Certificado ${cert.tipo} atualizado com sucesso.`);
+      } else {
+        await StorageService.salvarCertificadoAPI(cert);
+        showToast(`Certificado ${cert.tipo} registrado com sucesso.`);
+      }
+
+      // Recarrega frota e certificados sincronizados da API
+      const frotaAtualizada = await StorageService.carregarEmbarcacoesAPI();
+      setVessels(frotaAtualizada);
+
+      const certsConsolidados: Certificate[] = [];
+      frotaAtualizada.forEach((emb: any) => {
+        if (Array.isArray(emb.certificados)) {
+          certsConsolidados.push(...emb.certificados);
+        }
+      });
+      if (certsConsolidados.length > 0) {
+        setCertificates(certsConsolidados);
+      }
+    } catch (error: any) {
+      console.error("Erro ao salvar certificado:", error);
+      showToast(`Erro ao salvar certificado: ${error.message || "Verifique as informações"}`);
     }
-    setCertificates(updated);
-    StorageService.saveCertificates(updated);
   };
 
-  const handleDeleteCertificate = (certId: string) => {
-    const cert = certificates.find((c) => c.id === certId);
+  const handleDeleteCertificate = async (certId: string) => {
+    const cert = certificates.find((c) => String(c.id) === String(certId));
     if (!cert) return;
 
-    if (window.confirm(`Excluir o certificado ${cert.tipo} (Nº ${cert.numero})?`)) {
-      const updated = certificates.filter((c) => c.id !== certId);
-      setCertificates(updated);
-      StorageService.saveCertificates(updated);
-      showToast("Certificado excluído.");
+    if (window.confirm(`Excluir o certificado ${cert.tipo} (Nº ${cert.numero || 'S/N'})?`)) {
+      try {
+        await StorageService.deletarCertificadoAPI(certId);
+
+        setCertificates((prev) => prev.filter((c) => String(c.id) !== String(certId)));
+        showToast("Certificado excluído.");
+      } catch (error: any) {
+        console.error("Erro ao excluir certificado:", error);
+        showToast(`Erro ao excluir certificado: ${error.message || "Falha na operação"}`);
+      }
     }
   };
 
@@ -268,7 +326,7 @@ export default function App() {
     }
   };
 
-  // Se não estiver autenticado, exibe a tela de login
+  // Tela de Login caso não esteja autenticado
   if (!currentUser) {
     return (
       <AuthView
@@ -278,6 +336,16 @@ export default function App() {
           showToast(`Bem-vindo ao NavCert, ${user.nome}!`);
         }}
       />
+    );
+  }
+
+  // Tela de Carregamento Inicial de Dados
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-[#031923] text-teal-200">
+        <Loader2 className="w-10 h-10 animate-spin text-teal-400 mb-4" />
+        <p className="text-sm font-medium tracking-wide">Sincronizando dados da frota marítima...</p>
+      </div>
     );
   }
 
