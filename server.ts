@@ -4,6 +4,10 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import pkg from 'pg';
+import dns from 'dns';
+
+// Força o Node.js a priorizar conexões IPv4 para evitar ENETUNREACH no Render
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
