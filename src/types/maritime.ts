@@ -1,10 +1,13 @@
 export const TIPOS_EMBARCACAO = [
-  "EMPURRADOR FLUVIAL",
-  "BALSA",
-  "BALSA TANQUE (PETROLEIRA)",
-  "REBOCADOR",
-  "MÓDULOS RAMPAS",
+  'EMPURRADOR FLUVIAL',
+  'REBOCADOR',
+  'BALSA',
+  'PETROLEIRA',
+  'MÓDULO',
+  'RAMPAS',
+  'DIQUE FLUTUANTE'
 ] as const;
+
 
 export type TipoEmbarcacao = typeof TIPOS_EMBARCACAO[number];
 
@@ -39,8 +42,6 @@ export type CertTipo =
 export type CertStatus = "vencido" | "critico" | "atencao" | "valido";
 
 export type TipoVistoria = 
-  | "Inicial" 
-  | "Anual" 
   | "1ª Vistoria Anual"
   | "2ª Vistoria Anual"
   | "3ª Vistoria Anual"
