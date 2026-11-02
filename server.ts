@@ -5,6 +5,10 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import pkg from 'pg';
 import dns from 'dns';
+import helmet from 'helmet';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 
 // Força o Node.js a priorizar conexões IPv4 para evitar ENETUNREACH no Render
 dns.setDefaultResultOrder('ipv4first');
@@ -20,9 +24,88 @@ const app = express();
 const portArgIndex = process.argv.indexOf('--port');
 const port = portArgIndex !== -1 ? parseInt(process.argv[portArgIndex + 1], 10) : 3000;
 
+// --- 1. MIDDLEWARES DE SEGURANÇA ---
+
+// Cabeçalhos HTTP seguros (Helmet)
+app.use(helmet({
+  contentSecurityPolicy: false // Desativado para permitir assets estáticos da build do Vite
+}));
+
+// Proteção de Origem (CORS)
+app.use(cors());
+
+// Limitador de requisições por IP (Rate Limiter: máx 100 req por 15 minutos)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Limite de requisições excedido. Tente novamente mais tarde.' }
+});
+
+app.use('/api/', apiLimiter);
 app.use(express.json({ limit: '10mb' }));
 
-// --- CONEXÃO COM O BANCO DE DADOS POSTGRESQL (SUPABASE) ---
+// --- 2. SCHEMAS DE VALIDAÇÃO ZOD ---
+
+const embarcacaoSchema = z.object({
+  nome: z.string().trim().min(1, 'Nome é obrigatório e não pode ser vazio.'),
+  inscricao: z.string().trim().min(1, 'Inscrição é obrigatória e não pode ser vazia.'),
+  tipo: z.string().trim().min(1, 'Tipo é obrigatório e não pode ser vazio.'),
+  situacao: z.string().optional().default('Ativa'),
+  proprietario: z.string().nullable().optional(),
+  construtor: z.string().nullable().optional(),
+  ano_construcao: z.number().int().positive().nullable().optional(),
+  trecho: z.string().nullable().optional(),
+  porto_inscricao: z.string().nullable().optional(),
+  arqueacao_bruta: z.number().positive().nullable().optional(),
+});
+
+const certificadoSchema = z.object({
+  embarcacao_id: z.number().int().optional(),
+  vessel_id: z.number().int().optional(),
+  categoria: z.string().optional().default('CERTIFICADO'),
+  tipo: z.string().trim().min(1, 'Tipo de certificado é obrigatório.'),
+  tipo_teste: z.string().nullable().optional(),
+  numero: z.string().nullable().optional(),
+  data_emissao: z.string().nullable().optional(),
+  data_validade: z.string().optional(),
+  data_vencimento: z.string().optional(),
+  status: z.string().optional().default('valido'),
+  orgao_emissor: z.string().nullable().optional(),
+  responsavel_tecnico: z.string().nullable().optional(),
+  tipo_vistoria: z.string().nullable().optional(),
+  numero_art: z.string().nullable().optional(),
+  fabricante_equipamento: z.string().nullable().optional(),
+  modelo_equipamento: z.string().nullable().optional(),
+  numero_serie_equipamento: z.string().nullable().optional(),
+  faixa_medicao: z.string().nullable().optional(),
+  tracao_estatica_ton: z.string().nullable().optional(),
+  marca_agulha: z.string().nullable().optional(),
+  serie_agulha: z.string().nullable().optional(),
+  local_compensacao: z.string().nullable().optional(),
+  pressao_trabalho: z.string().nullable().optional(),
+  pressao_teste: z.string().nullable().optional(),
+  lacre_tag: z.string().nullable().optional(),
+  tanque_vinculado: z.string().nullable().optional(),
+  continuidade_eletrica: z.string().nullable().optional(),
+  laboratorio_calibracao: z.string().nullable().optional(),
+  arquivo_anexo_url: z.string().nullable().optional(),
+  observacoes: z.string().nullable().optional()
+});
+
+// --- 3. TRATAMENTO SEGURO DE ERROS (OWASP HARDENING) ---
+
+function responderErro(res: express.Response, error: any, mensagemPublica: string, statusCode = 500) {
+  console.error(`❌ [ERRO SERVIDOR]: ${mensagemPublica}`, error);
+  return res.status(statusCode).json({
+    error: mensagemPublica,
+    ...(process.env.NODE_ENV !== 'production' && { detalheTecnico: error?.message })
+  });
+}
+
+// --- 4. CONEXÃO COM O BANCO DE DADOS POSTGRESQL (SUPABASE) ---
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -30,7 +113,6 @@ const pool = new Pool({
   }
 });
 
-// Criação e migração automática do esquema no PostgreSQL
 async function inicializarBancoPostgres() {
   try {
     // 1. Tabela de Embarcações
@@ -51,7 +133,7 @@ async function inicializarBancoPostgres() {
       );
     `);
 
-    // 2. Tabela de Certificados (Conforme NORMAM-202)
+    // 2. Tabela de Certificados (NORMAM-202)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS certificados (
         id SERIAL PRIMARY KEY,
@@ -87,7 +169,7 @@ async function inicializarBancoPostgres() {
       );
     `);
 
-    // Garantia de Colunas (Adiciona novas colunas caso a tabela já existisse no Postgres)
+    // Garantia de Colunas
     const colunasEmb = [
       ['situacao', "TEXT DEFAULT 'Ativa'"],
       ['proprietario', 'TEXT'],
@@ -146,13 +228,12 @@ app.get('/api/health', async (_req, res) => {
     const { rows } = await pool.query('SELECT NOW()');
     res.json({ status: 'ok', database: 'PostgreSQL Supabase conectado', time: rows[0].now });
   } catch (error: any) {
-    res.status(500).json({ status: 'error', message: 'Erro na conexão com o banco de dados.' });
+    responderErro(res, error, 'Erro na conexão com o banco de dados.');
   }
 });
 
-// --- ROTAS DO BANCO DE DADOS (EMBARCAÇÕES E CERTIFICADOS) ---
+// --- 5. ROTAS DE EMBARCAÇÕES ---
 
-// Listar todas as embarcações com seus certificados vinculados
 app.get('/api/embarcacoes', async (_req, res) => {
   try {
     const { rows: embarcacoes } = await pool.query('SELECT * FROM embarcacoes ORDER BY nome ASC');
@@ -167,74 +248,84 @@ app.get('/api/embarcacoes', async (_req, res) => {
     );
     return res.json(resultado);
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao buscar embarcações: ' + error.message });
+    return responderErro(res, error, 'Erro ao buscar embarcações.');
   }
 });
 
-// Cadastrar nova embarcação
 app.post('/api/embarcacoes', async (req, res) => {
   try {
-    const { 
-      nome, 
-      inscricao, 
-      tipo, 
-      situacao, 
-      proprietario, 
-      construtor, 
-      ano_construcao, 
-      trecho, 
-      porto_inscricao, 
-      arqueacao_bruta 
-    } = req.body;
-
-    if (!nome || !inscricao || !tipo) {
-      return res.status(400).json({ error: 'Campos nome, inscrição e tipo são obrigatórios.' });
+    const validacao = embarcacaoSchema.safeParse(req.body);
+    if (!validacao.success) {
+      return res.status(400).json({
+        error: 'Dados inválidos.',
+        detalhes: validacao.error.issues.map(i => i.message)
+      });
     }
+
+    const {
+      nome,
+      inscricao,
+      tipo,
+      situacao,
+      proprietario,
+      construtor,
+      ano_construcao,
+      trecho,
+      porto_inscricao,
+      arqueacao_bruta
+    } = validacao.data;
 
     const { rows } = await pool.query(
       `INSERT INTO embarcacoes (
         nome, inscricao, tipo, situacao, proprietario, construtor, ano_construcao, trecho, porto_inscricao, arqueacao_bruta
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
-        nome, 
-        inscricao, 
-        tipo, 
-        situacao || 'Ativa', 
-        proprietario || null, 
-        construtor || null, 
-        ano_construcao || null, 
-        trecho || null, 
-        porto_inscricao || null, 
+        nome,
+        inscricao,
+        tipo,
+        situacao,
+        proprietario || null,
+        construtor || null,
+        ano_construcao || null,
+        trecho || null,
+        porto_inscricao || null,
         arqueacao_bruta || null
       ]
     );
 
-    return res.status(201).json({ 
-      id: rows[0].id, 
-      ...req.body, 
-      certificados: [] 
+    return res.status(201).json({
+      id: rows[0].id,
+      ...validacao.data,
+      certificados: []
     });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao cadastrar embarcação: ' + error.message });
+    return responderErro(res, error, 'Erro ao cadastrar embarcação.');
   }
 });
 
-// Atualizar dados de uma embarcação existente
 app.put('/api/embarcacoes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      nome, 
-      inscricao, 
-      tipo, 
-      situacao, 
-      proprietario, 
-      construtor, 
-      ano_construcao, 
-      trecho, 
-      porto_inscricao, 
-      arqueacao_bruta 
-    } = req.body;
+    const validacao = embarcacaoSchema.safeParse(req.body);
+    if (!validacao.success) {
+      return res.status(400).json({
+        error: 'Dados inválidos.',
+        detalhes: validacao.error.issues.map(i => i.message)
+      });
+    }
+
+    const {
+      nome,
+      inscricao,
+      tipo,
+      situacao,
+      proprietario,
+      construtor,
+      ano_construcao,
+      trecho,
+      porto_inscricao,
+      arqueacao_bruta
+    } = validacao.data;
 
     const result = await pool.query(
       `UPDATE embarcacoes SET
@@ -250,16 +341,16 @@ app.put('/api/embarcacoes/:id', async (req, res) => {
         arqueacao_bruta = $10
       WHERE id = $11`,
       [
-        nome, 
-        inscricao, 
-        tipo, 
-        situacao, 
-        proprietario, 
-        construtor, 
-        ano_construcao, 
-        trecho, 
-        porto_inscricao, 
-        arqueacao_bruta, 
+        nome,
+        inscricao,
+        tipo,
+        situacao,
+        proprietario || null,
+        construtor || null,
+        ano_construcao || null,
+        trecho || null,
+        porto_inscricao || null,
+        arqueacao_bruta || null,
         id
       ]
     );
@@ -268,13 +359,12 @@ app.put('/api/embarcacoes/:id', async (req, res) => {
       return res.status(404).json({ error: 'Embarcação não encontrada.' });
     }
 
-    return res.json({ id, ...req.body });
+    return res.json({ id, ...validacao.data });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao atualizar embarcação: ' + error.message });
+    return responderErro(res, error, 'Erro ao atualizar embarcação.');
   }
 });
 
-// Excluir embarcação (Exclui automaticamente os certificados associados via CASCADE)
 app.delete('/api/embarcacoes/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -286,51 +376,28 @@ app.delete('/api/embarcacoes/:id', async (req, res) => {
 
     return res.json({ success: true, message: 'Embarcação removida com sucesso.' });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao remover embarcação: ' + error.message });
+    return responderErro(res, error, 'Erro ao remover embarcação.');
   }
 });
 
-// Adicionar certificado/teste a uma embarcação
+// --- 6. ROTAS DE CERTIFICADOS ---
+
 app.post('/api/certificados', async (req, res) => {
   try {
-    const { 
-      embarcacao_id, 
-      vessel_id,
-      categoria,
-      tipo, 
-      tipo_teste,
-      numero, 
-      data_emissao, 
-      data_validade,
-      data_vencimento, 
-      status, 
-      orgao_emissor, 
-      responsavel_tecnico,
-      tipo_vistoria, 
-      numero_art,
-      fabricante_equipamento,
-      modelo_equipamento,
-      numero_serie_equipamento,
-      faixa_medicao,
-      tracao_estatica_ton,
-      marca_agulha,
-      serie_agulha,
-      local_compensacao,
-      pressao_trabalho,
-      pressao_teste,
-      lacre_tag,
-      tanque_vinculado,
-      continuidade_eletrica,
-      laboratorio_calibracao,
-      arquivo_anexo_url,
-      observacoes 
-    } = req.body;
+    const validacao = certificadoSchema.safeParse(req.body);
+    if (!validacao.success) {
+      return res.status(400).json({
+        error: 'Dados inválidos para o certificado.',
+        detalhes: validacao.error.issues.map(i => i.message)
+      });
+    }
 
-    const embId = embarcacao_id || vessel_id;
-    const vencimento = data_vencimento || data_validade;
+    const c = validacao.data;
+    const embId = c.embarcacao_id || c.vessel_id;
+    const vencimento = c.data_vencimento || c.data_validade;
 
-    if (!embId || !tipo || !vencimento) {
-      return res.status(400).json({ error: 'Embarcação, tipo de certificado e data de vencimento são obrigatórios.' });
+    if (!embId || !vencimento) {
+      return res.status(400).json({ error: 'Embarcação e data de vencimento são obrigatórias.' });
     }
 
     const { rows } = await pool.query(
@@ -345,34 +412,34 @@ app.post('/api/certificados', async (req, res) => {
         $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
       ) RETURNING id`,
       [
-        embId, 
-        categoria || 'CERTIFICADO',
-        tipo, 
-        tipo_teste || null,
-        numero || null, 
-        data_emissao || null, 
-        vencimento, 
-        status || 'valido', 
-        orgao_emissor || null, 
-        responsavel_tecnico || null,
-        tipo_vistoria || null, 
-        numero_art || null,
-        fabricante_equipamento || null,
-        modelo_equipamento || null,
-        numero_serie_equipamento || null,
-        faixa_medicao || null,
-        tracao_estatica_ton || null,
-        marca_agulha || null,
-        serie_agulha || null,
-        local_compensacao || null,
-        pressao_trabalho || null,
-        pressao_teste || null,
-        lacre_tag || null,
-        tanque_vinculado || null,
-        continuidade_eletrica || null,
-        laboratorio_calibracao || null,
-        arquivo_anexo_url || null,
-        observacoes || null
+        embId,
+        c.categoria,
+        c.tipo,
+        c.tipo_teste || null,
+        c.numero || null,
+        c.data_emissao || null,
+        vencimento,
+        c.status,
+        c.orgao_emissor || null,
+        c.responsavel_tecnico || null,
+        c.tipo_vistoria || null,
+        c.numero_art || null,
+        c.fabricante_equipamento || null,
+        c.modelo_equipamento || null,
+        c.numero_serie_equipamento || null,
+        c.faixa_medicao || null,
+        c.tracao_estatica_ton || null,
+        c.marca_agulha || null,
+        c.serie_agulha || null,
+        c.local_compensacao || null,
+        c.pressao_trabalho || null,
+        c.pressao_teste || null,
+        c.lacre_tag || null,
+        c.tanque_vinculado || null,
+        c.continuidade_eletrica || null,
+        c.laboratorio_calibracao || null,
+        c.arquivo_anexo_url || null,
+        c.observacoes || null
       ]
     );
 
@@ -380,54 +447,29 @@ app.post('/api/certificados', async (req, res) => {
       id: rows[0].id,
       embarcacao_id: embId,
       vessel_id: embId,
-      categoria: categoria || 'CERTIFICADO',
-      tipo,
+      categoria: c.categoria,
+      tipo: c.tipo,
       ...req.body
     });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao cadastrar certificado: ' + error.message });
+    return responderErro(res, error, 'Erro ao cadastrar certificado.');
   }
 });
 
-// Atualizar certificado/teste existente
 app.put('/api/certificados/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      embarcacao_id, 
-      vessel_id,
-      categoria,
-      tipo, 
-      tipo_teste,
-      numero, 
-      data_emissao, 
-      data_validade,
-      data_vencimento, 
-      status, 
-      orgao_emissor, 
-      responsavel_tecnico,
-      tipo_vistoria, 
-      numero_art,
-      fabricante_equipamento,
-      modelo_equipamento,
-      numero_serie_equipamento,
-      faixa_medicao,
-      tracao_estatica_ton,
-      marca_agulha,
-      serie_agulha,
-      local_compensacao,
-      pressao_trabalho,
-      pressao_teste,
-      lacre_tag,
-      tanque_vinculado,
-      continuidade_eletrica,
-      laboratorio_calibracao,
-      arquivo_anexo_url,
-      observacoes 
-    } = req.body;
+    const validacao = certificadoSchema.safeParse(req.body);
+    if (!validacao.success) {
+      return res.status(400).json({
+        error: 'Dados inválidos.',
+        detalhes: validacao.error.issues.map(i => i.message)
+      });
+    }
 
-    const embId = embarcacao_id || vessel_id;
-    const vencimento = data_vencimento || data_validade;
+    const c = validacao.data;
+    const embId = c.embarcacao_id || c.vessel_id;
+    const vencimento = c.data_vencimento || c.data_validade;
 
     const result = await pool.query(
       `UPDATE certificados SET
@@ -461,34 +503,34 @@ app.put('/api/certificados/:id', async (req, res) => {
         observacoes = $28
       WHERE id = $29`,
       [
-        embId, 
-        categoria || 'CERTIFICADO',
-        tipo, 
-        tipo_teste || null,
-        numero || null, 
-        data_emissao || null, 
-        vencimento, 
-        status || 'valido', 
-        orgao_emissor || null, 
-        responsavel_tecnico || null,
-        tipo_vistoria || null, 
-        numero_art || null,
-        fabricante_equipamento || null,
-        modelo_equipamento || null,
-        numero_serie_equipamento || null,
-        faixa_medicao || null,
-        tracao_estatica_ton || null,
-        marca_agulha || null,
-        serie_agulha || null,
-        local_compensacao || null,
-        pressao_trabalho || null,
-        pressao_teste || null,
-        lacre_tag || null,
-        tanque_vinculado || null,
-        continuidade_eletrica || null,
-        laboratorio_calibracao || null,
-        arquivo_anexo_url || null,
-        observacoes || null,
+        embId,
+        c.categoria,
+        c.tipo,
+        c.tipo_teste || null,
+        c.numero || null,
+        c.data_emissao || null,
+        vencimento,
+        c.status,
+        c.orgao_emissor || null,
+        c.responsavel_tecnico || null,
+        c.tipo_vistoria || null,
+        c.numero_art || null,
+        c.fabricante_equipamento || null,
+        c.modelo_equipamento || null,
+        c.numero_serie_equipamento || null,
+        c.faixa_medicao || null,
+        c.tracao_estatica_ton || null,
+        c.marca_agulha || null,
+        c.serie_agulha || null,
+        c.local_compensacao || null,
+        c.pressao_trabalho || null,
+        c.pressao_teste || null,
+        c.lacre_tag || null,
+        c.tanque_vinculado || null,
+        c.continuidade_eletrica || null,
+        c.laboratorio_calibracao || null,
+        c.arquivo_anexo_url || null,
+        c.observacoes || null,
         id
       ]
     );
@@ -499,11 +541,10 @@ app.put('/api/certificados/:id', async (req, res) => {
 
     return res.json({ id, ...req.body });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao atualizar certificado: ' + error.message });
+    return responderErro(res, error, 'Erro ao atualizar certificado.');
   }
 });
 
-// Excluir certificado
 app.delete('/api/certificados/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -515,11 +556,12 @@ app.delete('/api/certificados/:id', async (req, res) => {
 
     return res.json({ success: true, message: 'Certificado removido com sucesso.' });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Erro ao remover certificado: ' + error.message });
+    return responderErro(res, error, 'Erro ao remover certificado.');
   }
 });
 
-// Consultor Regulatório Marítimo com IA Gemini
+// --- 7. CONSULTOR REGULATÓRIO IA (GEMINI) ---
+
 app.post('/api/orientacao', async (req, res) => {
   try {
     const { pergunta, vesselContext } = req.body;
@@ -537,7 +579,6 @@ app.post('/api/orientacao', async (req, res) => {
 
     const ai = new GoogleGenAI();
     const systemPrompt = `Você é o Consultor Técnico Especialista em Segurança da Navegação do NavCert, especialista em normas marítimas, regulamentações navais e gestão de conformidade de embarcações e frotas.`;
-
     const userPrompt = `Contexto da Frota e Certificados Cadastrados:\n${vesselContext || 'Nenhuma embarcação cadastrada no momento.'}\n\nDúvida / Solicitação do Usuário:\n${pergunta}`;
 
     const response = await ai.models.generateContent({
@@ -553,18 +594,16 @@ app.post('/api/orientacao', async (req, res) => {
     const reply = response.text || 'Não foi possível gerar a resposta técnica no momento.';
     return res.json({ orientacao: reply });
   } catch (error: any) {
-    console.error('Erro no consultor AI:', error);
-    return res.status(500).json({
-      error: 'Falha ao processar a consulta marítima: ' + (error?.message || 'Erro desconhecido')
-    });
+    return responderErro(res, error, 'Falha ao processar a consulta marítima.');
   }
 });
+
+// --- 8. INICIALIZAÇÃO DO SERVIDOR ---
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
-    // Modo desenvolvimento com middleware Vite
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
@@ -572,7 +611,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Modo produção servindo build estático
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
