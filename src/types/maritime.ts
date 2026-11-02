@@ -123,7 +123,12 @@ export interface Certificate {
   tanque_vinculado?: string;
   continuidade_eletrica?: string;
 
+  // Integridade de Anexos e Supabase Storage (PDFs e Imagens)
+  url_documento?: string;
+  arquivo_path?: string;
+  path_documento?: string;
   arquivo_anexo_url?: string;
+
   observacoes?: string;
   created_at?: string;
 }

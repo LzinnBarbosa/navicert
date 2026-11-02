@@ -12,7 +12,8 @@ import {
   Shield,
   Wrench,
   FileCheck,
-  ExternalLink
+  ExternalLink,
+  FileText
 } from "lucide-react";
 import { Certificate, Vessel, CertTipo, CertStatus, PrazosConfig } from "../types/maritime";
 import { 
@@ -24,6 +25,7 @@ import {
   PRAZOS_PADRAO 
 } from "../lib/maritime-utils";
 import { StatusBadge } from "../components/StatusBadge";
+import { obterUrlTemporariaDocumento } from "../lib/uploadService";
 
 interface CertificatesViewProps {
   certificates: Certificate[];
@@ -57,6 +59,28 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>("todos");
 
   const vesselMap = new Map<string, Vessel>(vessels.map((v) => [v.id, v]));
+
+  // Lógica de abertura segura do documento anexado (URL direta ou Assinada via Supabase Storage)
+  const handleAbrirDocumento = async (cert: Certificate) => {
+    const urlDireta = cert.url_documento || (cert as any).arquivo_anexo_url;
+    
+    if (urlDireta) {
+      window.open(urlDireta, '_blank');
+      return;
+    }
+
+    const path = (cert as any).arquivo_path || (cert as any).path_documento;
+    if (path) {
+      const urlAssinada = await obterUrlTemporariaDocumento(path);
+      if (urlAssinada) {
+        window.open(urlAssinada, '_blank');
+      } else {
+        alert("Não foi possível gerar o link de acesso temporário ao documento.");
+      }
+    } else {
+      alert("Nenhum arquivo digitalizado foi anexado a este registro.");
+    }
+  };
 
   // Lógica de Filtro Expandida
   const filteredCerts = certificates.filter((c) => {
@@ -95,6 +119,9 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
   const sortedCerts = [...filteredCerts].sort((a, b) => {
     return diasParaVencer(a.data_validade) - diasParaVencer(b.data_validade);
   });
+
+  const diasCritico = (config as any).dias_critico ?? (config as any).prazo_critico_dias ?? 30;
+  const diasAtencao = (config as any).dias_atencao ?? (config as any).prazo_atencao_dias ?? 60;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -244,8 +271,8 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
             >
               <option value="todos">Todos os Status</option>
               <option value="vencido">Apenas Vencidos</option>
-              <option value="critico">Vencendo em até {config.dias_critico} dias</option>
-              <option value="atencao">Vencendo em até {config.dias_atencao} dias</option>
+              <option value="critico">Vencendo em até {diasCritico} dias</option>
+              <option value="atencao">Vencendo em até {diasAtencao} dias</option>
               <option value="valido">Apenas Regulares / Válidos</option>
             </select>
           </div>
@@ -309,6 +336,7 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
               <tbody className="divide-y divide-slate-800/80">
                 {sortedCerts.map((cert) => {
                   const vessel = vesselMap.get(cert.vessel_id);
+                  const temDocumento = !!(cert.url_documento || (cert as any).arquivo_anexo_url || (cert as any).arquivo_path || (cert as any).path_documento);
 
                   return (
                     <tr key={cert.id} className="hover:bg-slate-850/60 transition-colors">
@@ -386,16 +414,14 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
                       {/* Ações */}
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {cert.arquivo_anexo_url && (
-                            <a
-                              href={cert.arquivo_anexo_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
-                              title="Visualizar Anexo"
+                          {temDocumento && (
+                            <button
+                              onClick={() => handleAbrirDocumento(cert)}
+                              className="p-1.5 text-teal-400 hover:text-teal-300 hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+                              title="Visualizar Documento / Laudo PDF"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
+                            </button>
                           )}
                           {canEdit && (
                             <button
