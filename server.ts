@@ -689,7 +689,7 @@ async function executarVerificacaoAlertasEmail() {
     `;
 
     await resend.emails.send({
-      from: 'NavCert Alertas <alertas@resend.dev>',
+      from: 'NavCert Alertas <onboarding@resend.dev>',
       to: [destinatario],
       subject: `[NavCert] Alerta de Vencimento de Certificados (${vencidos.length} Vencidos / ${criticos.length} Críticos)`,
       html: htmlBody
