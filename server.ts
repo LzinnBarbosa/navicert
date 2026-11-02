@@ -9,6 +9,8 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import cron from 'node-cron';
+import { Resend } from 'resend';
 
 // Força o Node.js a priorizar conexões IPv4 para evitar ENETUNREACH no Render
 dns.setDefaultResultOrder('ipv4first');
@@ -24,15 +26,35 @@ const app = express();
 const portArgIndex = process.argv.indexOf('--port');
 const port = portArgIndex !== -1 ? parseInt(process.argv[portArgIndex + 1], 10) : 3000;
 
-// --- 1. MIDDLEWARES DE SEGURANÇA ---
+// Configuração do Cliente Resend para Envio de E-mails Regulatórios
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+// --- 1. MIDDLEWARES DE SEGURANÇA E CORS ---
 
 // Cabeçalhos HTTP seguros (Helmet)
 app.use(helmet({
   contentSecurityPolicy: false // Desativado para permitir assets estáticos da build do Vite
 }));
 
-// Proteção de Origem (CORS)
-app.use(cors());
+// Proteção de Origem (CORS) Flexível para Dev e Produção no Render
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL || ''
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('Acesso bloqueado pela política de CORS do NavCert.'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Limitador de requisições por IP (Rate Limiter: máx 100 req por 15 minutos)
 const apiLimiter = rateLimit({
@@ -90,6 +112,8 @@ const certificadoSchema = z.object({
   tanque_vinculado: z.string().nullable().optional(),
   continuidade_eletrica: z.string().nullable().optional(),
   laboratorio_calibracao: z.string().nullable().optional(),
+  url_documento: z.string().nullable().optional(),
+  arquivo_path: z.string().nullable().optional(),
   arquivo_anexo_url: z.string().nullable().optional(),
   observacoes: z.string().nullable().optional()
 });
@@ -133,7 +157,7 @@ async function inicializarBancoPostgres() {
       );
     `);
 
-    // 2. Tabela de Certificados (NORMAM-202)
+    // 2. Tabela de Certificados (NORMAM-202) com suporte a Supabase Storage
     await pool.query(`
       CREATE TABLE IF NOT EXISTS certificados (
         id SERIAL PRIMARY KEY,
@@ -163,13 +187,15 @@ async function inicializarBancoPostgres() {
         tanque_vinculado TEXT,
         continuidade_eletrica TEXT,
         laboratorio_calibracao TEXT,
+        url_documento TEXT,
+        arquivo_path TEXT,
         arquivo_anexo_url TEXT,
         observacoes TEXT,
         criado_em TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // Garantia de Colunas
+    // Garantia de Colunas para Embarcações
     const colunasEmb = [
       ['situacao', "TEXT DEFAULT 'Ativa'"],
       ['proprietario', 'TEXT'],
@@ -184,10 +210,13 @@ async function inicializarBancoPostgres() {
       await pool.query(`ALTER TABLE embarcacoes ADD COLUMN IF NOT EXISTS ${col} ${def};`);
     }
 
+    // Garantia de Colunas para Certificados (incluindo anexos do Storage)
     const colunasCert = [
       ['categoria', "TEXT DEFAULT 'CERTIFICADO'"],
       ['tipo_teste', 'TEXT'],
       ['responsavel_tecnico', 'TEXT'],
+      ['url_documento', 'TEXT'],
+      ['arquivo_path', 'TEXT'],
       ['arquivo_anexo_url', 'TEXT'],
       ['numero', 'TEXT'],
       ['data_emissao', 'TEXT'],
@@ -400,16 +429,18 @@ app.post('/api/certificados', async (req, res) => {
       return res.status(400).json({ error: 'Embarcação e data de vencimento são obrigatórias.' });
     }
 
+    const urlDoc = c.url_documento || c.arquivo_anexo_url || null;
+
     const { rows } = await pool.query(
       `INSERT INTO certificados (
         embarcacao_id, categoria, tipo, tipo_teste, numero, data_emissao, data_vencimento, status, 
         orgao_emissor, responsavel_tecnico, tipo_vistoria, numero_art, fabricante_equipamento, 
         modelo_equipamento, numero_serie_equipamento, faixa_medicao, tracao_estatica_ton, marca_agulha, 
         serie_agulha, local_compensacao, pressao_trabalho, pressao_teste, lacre_tag, tanque_vinculado, 
-        continuidade_eletrica, laboratorio_calibracao, arquivo_anexo_url, observacoes
+        continuidade_eletrica, laboratorio_calibracao, url_documento, arquivo_path, arquivo_anexo_url, observacoes
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 
-        $19, $20, $21, $22, $23, $24, $25, $26, $27, $28
+        $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
       ) RETURNING id`,
       [
         embId,
@@ -438,7 +469,9 @@ app.post('/api/certificados', async (req, res) => {
         c.tanque_vinculado || null,
         c.continuidade_eletrica || null,
         c.laboratorio_calibracao || null,
-        c.arquivo_anexo_url || null,
+        urlDoc,
+        c.arquivo_path || null,
+        urlDoc,
         c.observacoes || null
       ]
     );
@@ -470,6 +503,7 @@ app.put('/api/certificados/:id', async (req, res) => {
     const c = validacao.data;
     const embId = c.embarcacao_id || c.vessel_id;
     const vencimento = c.data_vencimento || c.data_validade;
+    const urlDoc = c.url_documento || c.arquivo_anexo_url || null;
 
     const result = await pool.query(
       `UPDATE certificados SET
@@ -499,9 +533,11 @@ app.put('/api/certificados/:id', async (req, res) => {
         tanque_vinculado = $24,
         continuidade_eletrica = $25,
         laboratorio_calibracao = $26,
-        arquivo_anexo_url = $27,
-        observacoes = $28
-      WHERE id = $29`,
+        url_documento = $27,
+        arquivo_path = $28,
+        arquivo_anexo_url = $29,
+        observacoes = $30
+      WHERE id = $31`,
       [
         embId,
         c.categoria,
@@ -529,7 +565,9 @@ app.put('/api/certificados/:id', async (req, res) => {
         c.tanque_vinculado || null,
         c.continuidade_eletrica || null,
         c.laboratorio_calibracao || null,
-        c.arquivo_anexo_url || null,
+        urlDoc,
+        c.arquivo_path || null,
+        urlDoc,
         c.observacoes || null,
         id
       ]
@@ -560,7 +598,128 @@ app.delete('/api/certificados/:id', async (req, res) => {
   }
 });
 
-// --- 7. CONSULTOR REGULATÓRIO IA (GEMINI) ---
+// --- 7. SERVIÇO DE ALERTAS POR E-MAIL (RESEND + CRON) ---
+
+async function executarVerificacaoAlertasEmail() {
+  try {
+    const { rows: certs } = await pool.query(`
+      SELECT c.*, e.nome as embarcacao_nome, e.inscricao as embarcacao_inscricao
+      FROM certificados c
+      JOIN embarcacoes e ON e.id = c.embarcacao_id
+      ORDER BY c.data_vencimento ASC
+    `);
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const vencidos: any[] = [];
+    const criticos: any[] = []; // <= 30 dias
+    const atencao: any[] = [];  // <= 60 dias
+
+    certs.forEach((c: any) => {
+      const dataVenc = new Date(c.data_vencimento);
+      dataVenc.setHours(0, 0, 0, 0);
+      const diffDias = Math.ceil((dataVenc.getTime() - hoje.getTime()) / (1000 * 3600 * 24));
+
+      if (diffDias < 0) {
+        vencidos.push({ ...c, diffDias: Math.abs(diffDias) });
+      } else if (diffDias <= 30) {
+        criticos.push({ ...c, diffDias });
+      } else if (diffDias <= 60) {
+        atencao.push({ ...c, diffDias });
+      }
+    });
+
+    console.log(`[Alertas NavCert] Vencidos: ${vencidos.length} | Críticos (<=30d): ${criticos.length} | Atenção (<=60d): ${atencao.length}`);
+
+    if (vencidos.length === 0 && criticos.length === 0 && atencao.length === 0) {
+      return { status: 'Conformidade total', totalAlertas: 0 };
+    }
+
+    if (!resend) {
+      console.warn('⚠️ API Key do Resend (RESEND_API_KEY) não configurada no .env. Notificações por e-mail ignoradas.');
+      return { status: 'Resend não configurado', totalAlertas: vencidos.length + criticos.length + atencao.length };
+    }
+
+    const destinatario = process.env.NOTIFICATION_EMAIL || 'gestao@navcert.com.br';
+
+    const htmlBody = `
+      <div style="font-family: Helvetica, Arial, sans-serif; color: #0f172a; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <div style="background-color: #0b1726; padding: 24px; text-align: center;">
+          <h1 style="color: #fbbf24; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">NavCert · Alerta de Conformidade Naval</h1>
+          <p style="color: #38bdf8; margin: 6px 0 0 0; font-size: 13px;">Relatório Diário Automatizado de Vencimentos NORMAM-202</p>
+        </div>
+
+        <div style="padding: 24px; background-color: #ffffff;">
+          <p style="font-size: 14px; color: #334155; margin-top: 0;">Prezada equipe técnica,</p>
+          <p style="font-size: 13px; color: #475569;">Foram identificadas pendências operacionais nos documentos da frota:</p>
+
+          ${vencidos.length > 0 ? `
+            <div style="margin-top: 16px; padding: 12px 16px; background-color: #fef2f2; border-left: 4px solid #ef4444; border-radius: 4px;">
+              <h3 style="margin: 0 0 8px 0; color: #991b1b; font-size: 14px;">🚨 CERTIFICADOS VENCIDOS (${vencidos.length})</h3>
+              <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #7f1d1d; line-height: 1.6;">
+                ${vencidos.map(v => `<li><strong>${v.embarcacao_nome}</strong> (${v.tipo}): Nº ${v.numero || 'S/N'} - Vencido há ${v.diffDias} dias</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          ${criticos.length > 0 ? `
+            <div style="margin-top: 16px; padding: 12px 16px; background-color: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px;">
+              <h3 style="margin: 0 0 8px 0; color: #9a3412; font-size: 14px;">⚠️ NÍVEL CRÍTICO (Vence em até 30 dias) (${criticos.length})</h3>
+              <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #7c2d12; line-height: 1.6;">
+                ${criticos.map(c => `<li><strong>${c.embarcacao_nome}</strong> (${c.tipo}): Nº ${c.numero || 'S/N'} - Restam ${c.diffDias} dias</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          ${atencao.length > 0 ? `
+            <div style="margin-top: 16px; padding: 12px 16px; background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px;">
+              <h3 style="margin: 0 0 8px 0; color: #854d0e; font-size: 14px;">⚡ NÍVEL DE ATENÇÃO (Vence em até 60 dias) (${atencao.length})</h3>
+              <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #713f12; line-height: 1.6;">
+                ${atencao.map(a => `<li><strong>${a.embarcacao_nome}</strong> (${a.tipo}): Nº ${a.numero || 'S/N'} - Restam ${a.diffDias} dias</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+
+          <div style="margin-top: 28px; padding: 16px; background-color: #f8fafc; border-radius: 8px; font-size: 12px; text-align: center; color: #64748b; border: 1px dashed #cbd5e1;">
+            Acesse o sistema <a href="${process.env.FRONTEND_URL || 'https://navcert.onrender.com'}" style="color: #0284c7; text-decoration: none; font-weight: bold;">NavCert SaaS</a> para visualizar os laudos em PDF e atualizar o cadastro.
+          </div>
+        </div>
+      </div>
+    `;
+
+    await resend.emails.send({
+      from: 'NavCert Alertas <alertas@resend.dev>',
+      to: [destinatario],
+      subject: `[NavCert] Alerta de Vencimento de Certificados (${vencidos.length} Vencidos / ${criticos.length} Críticos)`,
+      html: htmlBody
+    });
+
+    console.log(`✅ E-mail de resumo enviado com sucesso para ${destinatario}`);
+    return { status: 'Sucesso', destinatario, totalAlertas: vencidos.length + criticos.length + atencao.length };
+  } catch (err: any) {
+    console.error('❌ Erro na rotina de alertas por e-mail:', err);
+    throw err;
+  }
+}
+
+// Rota para Disparo Manual de Alertas por E-mail
+app.post('/api/notificacoes/verificar-alertas', async (_req, res) => {
+  try {
+    const resultado = await executarVerificacaoAlertasEmail();
+    return res.json({ success: true, resultado });
+  } catch (error: any) {
+    return responderErro(res, error, 'Falha ao acionar verificação de e-mails.');
+  }
+});
+
+// Cron Job: Verificação automática diária às 07:00 da manhã
+cron.schedule('0 7 * * *', async () => {
+  console.log('⏰ Executando rotina diária agendada de auditoria e envio de alertas...');
+  await executarVerificacaoAlertasEmail();
+});
+
+// --- 8. CONSULTOR REGULATÓRIO IA (GEMINI) ---
 
 app.post('/api/orientacao', async (req, res) => {
   try {
@@ -582,7 +741,7 @@ app.post('/api/orientacao', async (req, res) => {
     const userPrompt = `Contexto da Frota e Certificados Cadastrados:\n${vesselContext || 'Nenhuma embarcação cadastrada no momento.'}\n\nDúvida / Solicitação do Usuário:\n${pergunta}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.5-flash',
       contents: [
         { role: 'user', parts: [{ text: `${systemPrompt}\n\n---\n${userPrompt}` }] }
       ],
@@ -598,7 +757,7 @@ app.post('/api/orientacao', async (req, res) => {
   }
 });
 
-// --- 8. INICIALIZAÇÃO DO SERVIDOR ---
+// --- 9. INICIALIZAÇÃO DO SERVIDOR ---
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
