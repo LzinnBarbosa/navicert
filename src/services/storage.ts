@@ -1,5 +1,6 @@
 import { Vessel, Certificate, PrazosConfig, User, UserPermissions, DEFAULT_ROLE_PERMISSIONS } from "../types/maritime";
 import { getInitialSeedData, PRAZOS_PADRAO, USUARIOS_PADRAO, hashSenha, sanitizeInput } from "../lib/maritime-utils";
+import { fetchComAuth } from '../lib/api';
 
 const STORAGE_KEYS = {
   VESSELS: "navcert_vessels_v2",
@@ -12,6 +13,115 @@ const STORAGE_KEYS = {
 };
 
 export const StorageService = {
+  // --- OPERAÇÕES DA API BACKEND (POSTGRESQL / SUPABASE COM JWT) ---
+
+  /**
+   * Busca todas as embarcações e seus certificados sincronizados do servidor
+   */
+  async carregarEmbarcacoesAPI(): Promise<Vessel[]> {
+    try {
+      const data = await fetchComAuth('/api/embarcacoes');
+      if (Array.isArray(data)) {
+        this.saveVessels(data);
+      }
+      return data;
+    } catch (error) {
+      console.warn("Falha ao buscar embarcações da API, utilizando cache local:", error);
+      return this.getVessels();
+    }
+  },
+
+  /**
+   * Cadastra uma nova embarcação no servidor via API autenticada
+   */
+  async salvarEmbarcacaoAPI(embarcacao: Partial<Vessel>): Promise<Vessel> {
+    const res = await fetchComAuth('/api/embarcacoes', {
+      method: 'POST',
+      body: JSON.stringify(embarcacao)
+    });
+    
+    const vessels = this.getVessels();
+    const updated = [...vessels.filter(v => String(v.id) !== String(res.id)), res];
+    this.saveVessels(updated);
+    
+    return res;
+  },
+
+  /**
+   * Atualiza dados de uma embarcação via API autenticada
+   */
+  async atualizarEmbarcacaoAPI(id: number | string, embarcacao: Partial<Vessel>): Promise<Vessel> {
+    const res = await fetchComAuth(`/api/embarcacoes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(embarcacao)
+    });
+
+    const vessels = this.getVessels().map(v => String(v.id) === String(id) ? { ...v, ...res } : v);
+    this.saveVessels(vessels);
+
+    return res;
+  },
+
+  /**
+   * Exclui uma embarcação no banco de dados via API autenticada
+   */
+  async deletarEmbarcacaoAPI(id: number | string): Promise<{ success: boolean }> {
+    const res = await fetchComAuth(`/api/embarcacoes/${id}`, {
+      method: 'DELETE'
+    });
+
+    const vessels = this.getVessels().filter(v => String(v.id) !== String(id));
+    this.saveVessels(vessels);
+
+    return res;
+  },
+
+  /**
+   * Cadastra um novo certificado/teste via API autenticada
+   */
+  async salvarCertificadoAPI(certificado: Partial<Certificate>): Promise<Certificate> {
+    const res = await fetchComAuth('/api/certificados', {
+      method: 'POST',
+      body: JSON.stringify(certificado)
+    });
+
+    const certificates = this.getCertificates();
+    this.saveCertificates([...certificates, res]);
+
+    return res;
+  },
+
+  /**
+   * Atualiza um certificado/teste via API autenticada
+   */
+  async atualizarCertificadoAPI(id: number | string, certificado: Partial<Certificate>): Promise<Certificate> {
+    const res = await fetchComAuth(`/api/certificados/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(certificado)
+    });
+
+    const certificates = this.getCertificates().map(c => String(c.id) === String(id) ? { ...c, ...res } : c);
+    this.saveCertificates(certificates);
+
+    return res;
+  },
+
+  /**
+   * Remove um certificado no servidor via API autenticada
+   */
+  async deletarCertificadoAPI(id: number | string): Promise<{ success: boolean }> {
+    const res = await fetchComAuth(`/api/certificados/${id}`, {
+      method: 'DELETE'
+    });
+
+    const certificates = this.getCertificates().filter(c => String(c.id) !== String(id));
+    this.saveCertificates(certificates);
+
+    return res;
+  },
+
+  // --- GERENCIAMENTO DE ESTADO E PERSISTÊNCIA LOCAL ---
+
   init(): { 
     vessels: Vessel[]; 
     certificates: Certificate[]; 
@@ -21,13 +131,11 @@ export const StorageService = {
   } {
     try {
       let users = this.getUsers();
-      // Ensure wcarlos061@gmail.com always exists and has full admin permissions
       const hasWcarlos = users.some(u => u.email.toLowerCase() === "wcarlos061@gmail.com");
       if (!hasWcarlos) {
         users = [...USUARIOS_PADRAO, ...users.filter(u => u.email.toLowerCase() !== "wcarlos061@gmail.com")];
         this.saveUsers(users);
       } else {
-        // Ensure permissions property is populated
         users = users.map(u => ({
           ...u,
           permissions: u.permissions || DEFAULT_ROLE_PERMISSIONS[u.role || "operador"],
@@ -136,7 +244,8 @@ export const StorageService = {
     }
   },
 
-  // User & RBAC Management
+  // --- CONTROLE DE USUÁRIOS E PERMISSÕES (RBAC) ---
+
   getUsers(): User[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.USERS);
@@ -189,7 +298,6 @@ export const StorageService = {
     }
   },
 
-  // Alias para compatibilidade com App.tsx na edição de perfil
   saveCurrentUser(user: User | null): void {
     this.setCurrentUser(user);
   },
@@ -198,9 +306,6 @@ export const StorageService = {
     this.setCurrentUser(null);
   },
 
-  /**
-   * Registra um novo usuário no sistema
-   */
   async registerUser(data: {
     nome: string;
     email: string;
@@ -257,13 +362,9 @@ export const StorageService = {
     return { success: true, user: newUser };
   },
 
-  /**
-   * Autentica usuário com proteção contra ataques de força bruta e verificação de bloqueio
-   */
   async loginUser(emailInput: string, senhaInput: string): Promise<{ success: boolean; user?: User; error?: string }> {
     const email = sanitizeInput(emailInput).toLowerCase();
     
-    // Check brute-force lockout
     const attemptsKey = `${STORAGE_KEYS.LOGIN_ATTEMPTS}_${email}`;
     const attemptsRaw = localStorage.getItem(attemptsKey);
     let attempts = attemptsRaw ? JSON.parse(attemptsRaw) : { count: 0, lockedUntil: 0 };
@@ -289,7 +390,6 @@ export const StorageService = {
       return { success: false, error: "E-mail ou senha incorretos." };
     }
 
-    // Check if user is blocked by Admin
     if (user.is_blocked) {
       return { 
         success: false, 
@@ -299,7 +399,6 @@ export const StorageService = {
 
     const hashCalculado = await hashSenha(senhaInput);
 
-    // Support admin passwords
     const isPasswordValid = user.senha_hash === hashCalculado || 
       senhaInput === "admin123" || 
       (email === "wcarlos061@gmail.com" && (senhaInput === "admin123" || senhaInput === "wcarlos2026"));
@@ -313,10 +412,8 @@ export const StorageService = {
       return { success: false, error: "E-mail ou senha incorretos." };
     }
 
-    // Success: clear lockout attempts
     localStorage.removeItem(attemptsKey);
 
-    // Update last login
     user.ultimo_login = new Date().toISOString();
     user.permissions = user.permissions || DEFAULT_ROLE_PERMISSIONS[user.role || "operador"];
 
@@ -327,9 +424,6 @@ export const StorageService = {
     return { success: true, user };
   },
 
-  /**
-   * Altera o papel e redefine as permissões padrão correspondentes
-   */
   updateUserRole(userId: string, newRole: "admin" | "operador" | "auditor"): User[] {
     const users = this.getUsers().map(u => {
       if (u.id === userId) {
@@ -345,9 +439,6 @@ export const StorageService = {
     return users;
   },
 
-  /**
-   * Atualiza permissões granulares de um usuário específico
-   */
   updateUserPermissions(userId: string, permissions: Partial<UserPermissions>): User[] {
     const users = this.getUsers().map(u => {
       if (u.id === userId) {
@@ -365,9 +456,6 @@ export const StorageService = {
     return users;
   },
 
-  /**
-   * Bloqueia ou desbloqueia um usuário
-   */
   toggleUserBlocked(userId: string): User[] {
     const users = this.getUsers().map(u => {
       if (u.id === userId) {
@@ -382,9 +470,6 @@ export const StorageService = {
     return users;
   },
 
-  /**
-   * Exclui um usuário do sistema
-   */
   deleteUser(userId: string): User[] {
     const users = this.getUsers().filter(u => u.id !== userId);
     this.saveUsers(users);
