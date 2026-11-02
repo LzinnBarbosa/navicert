@@ -1,8 +1,23 @@
 import React from "react";
-import { X, Ship, FileCheck2, Plus, Calendar, AlertTriangle, ShieldCheck, MapPin, Radio, Hash, Building, Hammer } from "lucide-react";
+import { 
+  X, 
+  Ship, 
+  FileCheck2, 
+  Plus, 
+  Calendar, 
+  AlertTriangle, 
+  ShieldCheck, 
+  MapPin, 
+  Radio, 
+  Hash, 
+  Building, 
+  Hammer,
+  ExternalLink 
+} from "lucide-react";
 import { Vessel, Certificate, PrazosConfig } from "../types/maritime";
 import { tipoCurto, formatarDataBR, diasParaVencer, PRAZOS_PADRAO } from "../lib/maritime-utils";
 import { StatusBadge } from "./StatusBadge";
+import { obterUrlTemporariaDocumento } from "../lib/uploadService";
 
 interface VesselDetailModalProps {
   isOpen: boolean;
@@ -27,9 +42,33 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
 
   const vesselCerts = certificates.filter((c) => c.vessel_id === vessel.id);
 
+  // Abertura assíncrona do documento/laudo em PDF com Signed URL
+  const handleAbrirDocumento = async (e: React.MouseEvent, cert: Certificate) => {
+    e.stopPropagation(); // Impede o disparo do evento de edição do modal
+    const urlDireta = cert.url_documento || cert.arquivo_anexo_url;
+
+    if (urlDireta) {
+      window.open(urlDireta, '_blank');
+      return;
+    }
+
+    const path = cert.arquivo_path || cert.path_documento;
+    if (path) {
+      const urlAssinada = await obterUrlTemporariaDocumento(path);
+      if (urlAssinada) {
+        window.open(urlAssinada, '_blank');
+      } else {
+        alert("Não foi possível gerar o link de acesso temporário ao documento.");
+      }
+    } else {
+      alert("Nenhum arquivo digitalizado foi anexado a este registro.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
+        
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-800 bg-slate-850">
           <div className="flex items-center gap-3">
@@ -146,6 +185,8 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
             ) : (
               <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
                 {vesselCerts.map((cert) => {
+                  const temDocumento = !!(cert.url_documento || cert.arquivo_anexo_url || cert.arquivo_path || cert.path_documento);
+
                   return (
                     <div
                       key={cert.id}
@@ -173,7 +214,18 @@ export const VesselDetailModal: React.FC<VesselDetailModalProps> = ({
                           </p>
                         )}
                       </div>
+
                       <div className="flex items-center gap-2">
+                        {temDocumento && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAbrirDocumento(e, cert)}
+                            className="p-1.5 text-teal-400 hover:text-teal-300 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            title="Visualizar Laudo / PDF Anexado"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        )}
                         <StatusBadge validade={cert.data_validade} prazos={prazos} />
                       </div>
                     </div>
