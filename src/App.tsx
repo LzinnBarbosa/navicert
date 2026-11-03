@@ -382,9 +382,11 @@ export default function App() {
   if (!currentUser) {
     return (
       <AuthView
-        onLoginSuccess={(user) => {
+        onLoginSuccess={async (user) => {
+          StorageService.saveCurrentUser(user);
           setCurrentUser(user);
-          setUsers(StorageService.getUsers());
+          const userList = await StorageService.getUsers();
+          setUsers(userList);
           showToast(`Bem-vindo ao NavCert, ${user.nome}!`);
         }}
       />

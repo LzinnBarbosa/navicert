@@ -155,12 +155,10 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   ]);
 
-  // ---------------------------------------------------------------------------
-  // MOTOR DE ARRASTE CORRIGIDO (DRAG & DROP ENGINE)
-  // ---------------------------------------------------------------------------
+  // MOTOR DE ARRASTE CORRIGIDO (DRAG & DROP)
   const [position, setPosition] = useState<{ x: number; y: number }>(() => ({
-    x: typeof window !== "undefined" ? Math.max(20, window.innerWidth - 84) : 800,
-    y: typeof window !== "undefined" ? Math.max(20, window.innerHeight - 84) : 600,
+    x: typeof window !== "undefined" ? Math.max(16, window.innerWidth - 84) : 800,
+    y: typeof window !== "undefined" ? Math.max(16, window.innerHeight - 84) : 600,
   }));
 
   const [isDragging, setIsDragging] = useState(false);
@@ -171,7 +169,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Reajusta limites ao redimensionar a janela
   useEffect(() => {
     const handleResize = () => {
       setPosition((prev) => ({
@@ -190,7 +187,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   }, [messages, isOpen]);
 
-  // INÍCIO DO ARRASTE
   const startDrag = (clientX: number, clientY: number) => {
     isDraggingRef.current = true;
     setIsDragging(true);
@@ -200,7 +196,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Apenas clique com o botão esquerdo
+    if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     startDrag(e.clientX, e.clientY);
@@ -212,7 +208,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   };
 
-  // MOVIMENTAÇÃO GLOBAL (WINDOW LISTENERS)
   useEffect(() => {
     const handleMove = (clientX: number, clientY: number) => {
       if (!isDraggingRef.current) return;
@@ -220,7 +215,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
       const deltaX = clientX - dragStartPos.current.x;
       const deltaY = clientY - dragStartPos.current.y;
 
-      // Trava de sensibilidade de 4px para não arrastar acidentalmente no clique simples
       if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
         hasMovedFar.current = true;
       }
@@ -266,7 +260,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
 
   const handleButtonClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Só alterna a abertura do chat se não tiver movido o ícone pela tela
     if (!hasMovedFar.current) {
       setIsOpen((prev) => !prev);
     }
@@ -382,15 +375,16 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
         position: "fixed",
         left: `${position.x}px`,
         top: `${position.y}px`,
+        bottom: "auto",
+        right: "auto",
         zIndex: 9999,
+        touchAction: "none"
       }}
       className="select-none font-sans"
     >
       {/* 1. BOTÃO CIRCULAR ARRASTÁVEL (FAB DRAGGABLE) */}
       {!isOpen && (
         <div className="relative group touch-none">
-          
-          {/* Tooltip explicativo no hover */}
           <div className={`absolute ${isRightSide ? "right-full mr-3" : "left-full ml-3"} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none`}>
             <div className="bg-slate-900/95 text-cyan-300 border border-cyan-500/30 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap backdrop-blur-sm flex items-center gap-1.5">
               <GripVertical className="w-3.5 h-3.5 text-slate-400" />
@@ -425,7 +419,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
         </div>
       )}
 
-      {/* 2. JANELA DE CHAT FLUTUANTE (FIXADA AO BOTÃO ARRASTADO) */}
+      {/* 2. JANELA DE CHAT FLUTUANTE */}
       {isOpen && (
         <div
           style={{
@@ -435,7 +429,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
           }}
           className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/90 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md"
         >
-          {/* CABEÇALHO COM ÁREA DE ARRASTE */}
           <div
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
@@ -464,7 +457,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             </button>
           </div>
 
-          {/* ÁREA DE MENSAGENS */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3.5 no-scrollbar bg-[#03151f]/90">
             {messages.map((msg) => (
               <div
@@ -497,7 +489,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* CHIPS */}
           <div className="px-3 py-2.5 bg-[#021017] border-t border-cyan-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {suggestionChips.map((chip, idx) => (
               <button
@@ -510,7 +501,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             ))}
           </div>
 
-          {/* FORMULÁRIO */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
