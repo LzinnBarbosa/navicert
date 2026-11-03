@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { User } from "../types/maritime";
-import { UserCheck, X, Save, Shield } from "lucide-react";
+import { UserCheck, X, Save, Shield, AlertCircle } from "lucide-react";
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User | null;
-  onSaveProfile: (updatedData: { nome: string; email: string; cargo: string }) => void;
+  onSaveProfile: (updatedData: { nome: string; email: string; cargo: string }) => Promise<void> | void;
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -18,21 +18,38 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [cargo, setCargo] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) {
       setNome(currentUser.nome || "");
       setEmail(currentUser.email || "");
       setCargo(currentUser.cargo || "");
+      setErrorMsg(null);
     }
   }, [currentUser, isOpen]);
 
   if (!isOpen || !currentUser) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveProfile({ nome, email, cargo });
-    onClose();
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      await onSaveProfile({ 
+        nome: nome.trim(), 
+        email: email.trim(), 
+        cargo: cargo.trim() 
+      });
+      onClose();
+    } catch (err: any) {
+      console.error("Erro ao guardar dados do perfil:", err);
+      setErrorMsg(err.message || "Ocorreu um erro ao atualizar os dados no servidor.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,10 +66,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <p className="text-xs text-teal-300/60">Atualize seu perfil de usuário</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-teal-400/60 hover:text-white p-1 rounded-lg">
+          <button 
+            type="button" 
+            onClick={onClose} 
+            className="text-teal-400/60 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorMsg && (
+          <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -67,13 +95,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-teal-200 block mb-1">E-mail de Acesso</label>
+            <label className="text-xs font-semibold text-teal-200 block mb-1">
+              E-mail de Acesso <span className="text-teal-400/50 text-[10px] font-normal">(Chave Única de Utilizador)</span>
+            </label>
             <input
               type="email"
-              required
+              disabled
+              readOnly
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-[#03141d] border border-teal-900/60 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-teal-400"
+              className="w-full bg-[#03141d]/60 border border-teal-900/30 rounded-xl px-3.5 py-2 text-xs text-teal-400/60 cursor-not-allowed outline-none select-none"
             />
           </div>
 
@@ -101,15 +131,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-[#03141d] hover:bg-teal-950 text-teal-300 rounded-xl text-xs font-semibold"
+              disabled={loading}
+              className="px-4 py-2 bg-[#03141d] hover:bg-teal-950 text-teal-300 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-md shadow-teal-950"
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-md shadow-teal-950 transition-all disabled:opacity-50 cursor-pointer"
             >
-              <Save className="w-4 h-4" /> Salvar Alterações
+              <Save className="w-4 h-4" /> 
+              <span>{loading ? "A guardar..." : "Salvar Alterações"}</span>
             </button>
           </div>
         </form>
