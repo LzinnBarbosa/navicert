@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-app: #0b1120;
+    --bg-card: #151e32;
+    --bg-card-hover: #1e2942;
+    --bg-input: #0f172a;
+    
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-active: rgba(14, 165, 233, 0.4);
+
+    --primary: #0ea5e9;
+    --primary-hover: #0284c7;
+    --accent: #f59e0b;
+    --accent-hover: #d97706;
+
+    --status-valid-bg: rgba(16, 185, 129, 0.1);
+    --status-valid-text: #34d399;
+    --status-warning-bg: rgba(245, 158, 11, 0.1);
+    --status-warning-text: #fbbf24;
+    --status-expired-bg: rgba(239, 68, 68, 0.1);
+    --status-expired-text: #f87171;
+  }
+}
+
+.glass-panel {
+  background: rgba(21, 30, 50, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Esconde o contêiner de impressão na tela */
+#print-root {
+  display: none;
+}
+
+/* ==========================================
+   ESTILOS DE IMPRESSÃO - NAVCERT (PDF)
+   ========================================== */
+@media print {
+  /* Oculta toda a interface escura do sistema */
+  #root {
+    display: none !important;
+  }
+
+  /* Exibe unicamente a área de impressão em fundo branco */
+  #print-root {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  .page-break-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

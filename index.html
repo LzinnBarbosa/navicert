@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NavCert – Gestão de Certificados Marítimos</title>
+    
+    <!-- Meta tags estritas Anti-Cache para navegadores e WebViews Mobile -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    
+    <!-- Favicon de Âncora Marinha personalizado para o NavCert -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232dd4bf' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='5' r='3'/><path d='M12 8v13M5 12H2a10 10 0 0 0 20 0h-3'/></svg>" />
+
+    <meta name="description" content="Sistema profissional para controle de certificados navais (CSN, Borda Livre, Vistoria de Casco e Máquinas), alertas de vencimento, gestão de frota e consultor marítimo inteligente." />
+    <meta property="og:title" content="NavCert – Gestão de Certificados Marítimos" />
+    <meta property="og:description" content="Sistema profissional para controle de certificados navais (CSN, Borda Livre, Vistoria de Casco e Máquinas), alertas de vencimento, gestão de frota e consultor marítimo inteligente." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200">
+    <!-- Aplicação Principal -->
+    <div id="root"></div>
+
+    <!-- Elemento isolado para renderização do PDF de impressão -->
+    <div id="print-root"></div>
+
+    <!-- Script de Purga Automática de Cache Storage e Service Workers (Mobile) -->
+    <script>
+      (function() {
+        // 1. Desregistra Service Workers antigos (se houver PWA ativo no celular)
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            for (let registration of registrations) {
+              registration.unregister();
+              console.log('⚡ [NavCert] Service Worker antigo desregistrado.');
+            }
+          });
+        }
+        
+        // 2. Limpa o Cache Storage de arquivos estáticos retidos pelo navegador mobile
+        if ('caches' in window) {
+          caches.keys().then(function(names) {
+            for (let name of names) {
+              caches.delete(name);
+              console.log('⚡ [NavCert] Cache estático purgado:', name);
+            }
+          });
+        }
+      })();
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
