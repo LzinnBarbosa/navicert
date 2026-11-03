@@ -10,7 +10,8 @@ import {
   AlertCircle, 
   Shield,
   KeyRound,
-  ArrowLeft
+  ArrowLeft,
+  X
 } from "lucide-react";
 import { User } from "../types/maritime";
 import { supabase } from "../lib/supabaseClient";
@@ -54,7 +55,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
   const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
   const [showExpiredPassword, setShowExpiredPassword] = useState(false);
 
-  const [, setIsLgpdModalOpen] = useState(false);
+  // Estado do Modal da LGPD
+  const [isLgpdModalOpen, setIsLgpdModalOpen] = useState(false);
 
   const limparMensagens = () => {
     setLoginError("");
@@ -62,16 +64,24 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     setLoginSuccess("");
   };
 
-  // 1. AUTENTICAÇÃO DE LOGIN E VALIDAÇÃO DE SEGURANÇA
+  // 1. AUTENTICAÇÃO DE LOGIN E VALIDAÇÃO DE SEGURANÇA (SANITIADO PARA MOBILE)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     limparMensagens();
+
+    const emailSanitizado = loginEmail.trim().toLowerCase();
+    const senhaSanitizada = loginSenha.trim();
+
+    if (!emailSanitizado || !senhaSanitizada) {
+      setLoginError("Por favor, preencha o e-mail e a senha.");
+      return;
+    }
+
     setLoginLoading(true);
 
     try {
-      const resultado = await autenticarPorEmail(loginEmail);
+      const resultado = await autenticarPorEmail(emailSanitizado);
 
-      // Usuário Não Cadastrado
       if (resultado.status === "NAO_CADASTRADO") {
         setLoginError(resultado.message);
         setLoginLoading(false);
@@ -80,21 +90,18 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
 
       const profile = resultado.profile;
 
-      // Verificação de Bloqueio
       if (profile.is_blocked || profile.status === "bloqueado") {
         setLoginError("Conta suspensa ou bloqueada. Entre em contato com a administração.");
         setLoginLoading(false);
         return;
       }
 
-      // Validação da Senha
-      if (profile.senha_hash && profile.senha_hash !== loginSenha) {
+      if (profile.senha_hash && profile.senha_hash !== senhaSanitizada) {
         setLoginError("E-mail ou senha incorretos.");
         setLoginLoading(false);
         return;
       }
 
-      // Regra dos 30 Dias: Expiração de Senha
       if (resultado.precisaRedefinirSenha) {
         setUserIdExpirado(profile.id);
         setLoginError("Sua senha expirou devido à política de segurança de 30 dias. Cadastre uma nova senha.");
@@ -103,7 +110,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // Atualizar timestamp do último login
       await supabase
         .from("profiles")
         .update({ ultimo_login: new Date().toISOString() })
@@ -122,7 +128,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     limparMensagens();
 
-    if (regSenha !== regSenhaConfirma) {
+    const senhaFormatada = regSenha.trim();
+    const senhaConfirmaFormatada = regSenhaConfirma.trim();
+
+    if (senhaFormatada !== senhaConfirmaFormatada) {
       setRegError("As senhas digitadas não coincidem.");
       return;
     }
@@ -134,29 +143,28 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     setRegLoading(true);
     try {
       const emailFormatado = regEmail.trim().toLowerCase();
+      const nomeFormatado = regNome.trim();
 
-      // Dispara confirmação via Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: emailFormatado,
-        password: regSenha,
+        password: senhaFormatada,
         options: {
           emailRedirectTo: window.location.origin,
-          data: { nome: regNome }
+          data: { nome: nomeFormatado }
         }
       });
 
       if (authError) throw authError;
 
-      // Cria/Atualiza a entrada de perfil com role "auditor" por padrão
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: authData.user?.id || `usr_${Date.now()}`,
-        nome: regNome,
+        nome: nomeFormatado,
         email: emailFormatado,
-        cargo: regCargo,
+        cargo: regCargo.trim(),
         role: "auditor",
-        senha_hash: regSenha,
+        senha_hash: senhaFormatada,
         senha_alterada_em: new Date().toISOString(),
-        historico_senhas: [regSenha],
+        historico_senhas: [senhaFormatada],
         status: "pendente",
         email_confirmado: false,
         termos_aceitos: true,
@@ -177,19 +185,20 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 3. RECUPERAÇÃO DE SENHA ("ESQUECEU A SENHA?")
+  // 3. RECUPERAÇÃO DE SENHA
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     limparMensagens();
 
-    if (!loginEmail) {
+    const emailFormatado = loginEmail.trim().toLowerCase();
+    if (!emailFormatado) {
       setLoginError("Informe o seu e-mail para solicitar a redefinição.");
       return;
     }
 
     setLoginLoading(true);
     try {
-      const res = await solicitarRecuperacaoSenha(loginEmail);
+      const res = await solicitarRecuperacaoSenha(emailFormatado);
       if (res.success) {
         setLoginSuccess(res.message);
       } else {
@@ -207,12 +216,15 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     e.preventDefault();
     limparMensagens();
 
-    if (novaSenha !== confirmarNovaSenha) {
+    const novaFormatada = novaSenha.trim();
+    const confirmaFormatada = confirmarNovaSenha.trim();
+
+    if (novaFormatada !== confirmaFormatada) {
       setLoginError("As senhas digitadas não coincidem.");
       return;
     }
 
-    if (novaSenha.length < 6) {
+    if (novaFormatada.length < 6) {
       setLoginError("A nova senha deve ter no mínimo 6 caracteres.");
       return;
     }
@@ -221,7 +233,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
     try {
       if (!userIdExpirado) throw new Error("Sessão expirada. Realize o login novamente.");
 
-      const res = await atualizarSenhaComHistorico(userIdExpirado, novaSenha);
+      const res = await atualizarSenhaComHistorico(userIdExpirado, novaFormatada);
 
       if (!res.success) {
         setLoginError(res.message);
@@ -319,6 +331,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                     <input
                       type="email"
                       required
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder="usuario@navcert.com.br"
@@ -403,6 +419,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                     <input
                       type="email"
                       required
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
                       placeholder="fernando@suaempresa.com.br"
@@ -528,6 +548,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                     <input
                       type="email"
                       required
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder="usuario@navcert.com.br"
@@ -639,6 +663,45 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
           <span>Ambiente seguro com controle de acesso e conformidade LGPD</span>
         </div>
       </div>
+
+      {/* MODAL DE TERMOS DA LGPD */}
+      {isLgpdModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-sky-400" />
+                <h3 className="text-sm font-bold text-white">Política de Privacidade & LGPD</h3>
+              </div>
+              <button
+                onClick={() => setIsLgpdModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="text-xs text-slate-300 space-y-3 max-h-72 overflow-y-auto pr-1 leading-relaxed">
+              <p>
+                Em conformidade com a <strong>Lei Geral de Proteção de Dados (Lei 13.709/2018)</strong>, informamos que os dados pessoais coletados (Nome, E-mail Corporativo e Cargo) são estritamente utilizados para finalidades de autenticação, segurança auditável e controle de acessos da plataforma NavCert.
+              </p>
+              <p>
+                Seus dados são armazenados com criptografia de ponta a ponta e não serão compartilhados com terceiros sem consentimento formal prévio ou exigência legal.
+              </p>
+              <p>
+                Você possui o direito de solicitar a alteração, exportação ou exclusão definitiva de seu perfil a qualquer momento através da administração do sistema.
+              </p>
+            </div>
+            <div className="pt-2 flex justify-end border-t border-slate-800">
+              <button
+                onClick={() => setIsLgpdModalOpen(false)}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

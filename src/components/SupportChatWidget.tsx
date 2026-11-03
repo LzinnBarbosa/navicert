@@ -155,7 +155,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   ]);
 
-  // MOTOR DE ARRASTE CORRIGIDO (DRAG & DROP)
+  // ENGINE DE POSICIONAMENTO E ARRASTE COM POINTER EVENTS
   const [position, setPosition] = useState<{ x: number; y: number }>(() => ({
     x: typeof window !== "undefined" ? Math.max(16, window.innerWidth - 84) : 800,
     y: typeof window !== "undefined" ? Math.max(16, window.innerHeight - 84) : 600,
@@ -187,76 +187,43 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   }, [messages, isOpen]);
 
-  const startDrag = (clientX: number, clientY: number) => {
+  // HANDLERS UNIFICADOS PARA POINTER EVENTS (TOUCH & MOUSE)
+  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+
+    e.currentTarget.setPointerCapture(e.pointerId);
     isDraggingRef.current = true;
     setIsDragging(true);
     hasMovedFar.current = false;
-    dragStartPos.current = { x: clientX, y: clientY };
+
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
     elementStartPos.current = { ...position };
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    startDrag(e.clientX, e.clientY);
-  };
+  const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!isDraggingRef.current) return;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    const deltaX = e.clientX - dragStartPos.current.x;
+    const deltaY = e.clientY - dragStartPos.current.y;
+
+    if (Math.hypot(deltaX, deltaY) > 5) {
+      hasMovedFar.current = true;
     }
+
+    const newX = Math.max(16, Math.min(window.innerWidth - 75, elementStartPos.current.x + deltaX));
+    const newY = Math.max(16, Math.min(window.innerHeight - 75, elementStartPos.current.y + deltaY));
+
+    setPosition({ x: newX, y: newY });
   };
 
-  useEffect(() => {
-    const handleMove = (clientX: number, clientY: number) => {
-      if (!isDraggingRef.current) return;
-
-      const deltaX = clientX - dragStartPos.current.x;
-      const deltaY = clientY - dragStartPos.current.y;
-
-      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
-        hasMovedFar.current = true;
-      }
-
-      const newX = Math.max(16, Math.min(window.innerWidth - 75, elementStartPos.current.x + deltaX));
-      const newY = Math.max(16, Math.min(window.innerHeight - 75, elementStartPos.current.y + deltaY));
-
-      setPosition({ x: newX, y: newY });
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (isDraggingRef.current) {
-        e.preventDefault();
-        handleMove(e.clientX, e.clientY);
-      }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (isDraggingRef.current && e.touches.length > 0) {
-        handleMove(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    };
-
-    const stopDrag = () => {
-      if (isDraggingRef.current) {
-        isDraggingRef.current = false;
-        setIsDragging(false);
-      }
-    };
-
-    window.addEventListener("mousemove", onMouseMove, { capture: true });
-    window.addEventListener("mouseup", stopDrag, { capture: true });
-    window.addEventListener("touchmove", onTouchMove, { capture: true });
-    window.addEventListener("touchend", stopDrag, { capture: true });
-
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove, { capture: true });
-      window.removeEventListener("mouseup", stopDrag, { capture: true });
-      window.removeEventListener("touchmove", onTouchMove, { capture: true });
-      window.removeEventListener("touchend", stopDrag, { capture: true });
-    };
-  }, []);
+  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (!isDraggingRef.current) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    isDraggingRef.current = false;
+    setIsDragging(false);
+  };
 
   const handleButtonClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -394,8 +361,10 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
           </div>
 
           <button
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onClick={handleButtonClick}
             aria-label="Assistente NavCert Arrastável"
             className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-2xl shadow-cyan-500/40 ${
@@ -430,8 +399,10 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
           className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/90 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md"
         >
           <div
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             className="bg-gradient-to-r from-[#03141d] via-[#082a38] to-[#03141d] p-4 border-b border-cyan-900/50 flex items-center justify-between cursor-grab active:cursor-grabbing select-none"
           >
             <div className="flex items-center gap-3">
@@ -444,7 +415,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </h3>
                 <p className="text-[10px] text-cyan-300/70 flex items-center gap-1">
-                  <GripVertical className="w-3 h-3 text-cyan-400/50 inline" /> Arraste para mover a janela
+                  <GripVertical className="w-3.5 h-3.5 text-cyan-400/50 inline" /> Arraste para mover a janela
                 </p>
               </div>
             </div>

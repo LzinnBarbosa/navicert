@@ -4,14 +4,41 @@ import { sanitizarPayloadPerfil } from '../utils/sanitizePayload';
 import { saveUserProfileToSupabase, fetchUsersFromSupabase } from '../lib/maritimeSupabaseService';
 import { PRAZOS_PADRAO } from '../lib/maritime-utils';
 
+// Helper de Armazenamento Seguro (Evita crashes em navegadores móveis/privados)
+const safeMemoryStore: Record<string, string> = {};
+
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return safeMemoryStore[key] || null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      safeMemoryStore[key] = value;
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      delete safeMemoryStore[key];
+    }
+  }
+};
+
 export class StorageService {
   // ---------------------------------------------------------------------------
-  // 1. INICIALIZAÇÃO & SESSÃO LOCAL
+  // 1. GESTÃO DE SESSÃO LOCAL SEGURO
   // ---------------------------------------------------------------------------
 
   static init(): { currentUser: User | null } {
     try {
-      const userRaw = localStorage.getItem('navcert_current_user');
+      const userRaw = safeStorage.getItem('navcert_current_user');
       return { currentUser: userRaw ? JSON.parse(userRaw) : null };
     } catch {
       return { currentUser: null };
@@ -19,16 +46,17 @@ export class StorageService {
   }
 
   static saveCurrentUser(user: User): void {
-    localStorage.setItem('navcert_current_user', JSON.stringify(user));
+    safeStorage.setItem('navcert_current_user', JSON.stringify(user));
   }
 
   static logout(): void {
-    localStorage.removeItem('navcert_current_user');
+    safeStorage.removeItem('navcert_current_user');
+    safeStorage.removeItem('navcert_last_activity');
     supabase.auth.signOut();
   }
 
   static saveConfig(config: PrazosConfig): void {
-    localStorage.setItem('navcert_config', JSON.stringify(config));
+    safeStorage.setItem('navcert_config', JSON.stringify(config));
   }
 
   static resetToDefaults(): { vessels: Vessel[]; certificates: Certificate[]; config: PrazosConfig } {
@@ -36,7 +64,7 @@ export class StorageService {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. GESTÃO DE UTILIZADORES / PERFIS
+  // 2. GESTÃO DE USUÁRIOS E AUTENTICAÇÃO
   // ---------------------------------------------------------------------------
 
   static async updateUser(user: User): Promise<boolean> {
@@ -64,9 +92,14 @@ export class StorageService {
     return await fetchUsersFromSupabase();
   }
 
-  static async loginUser(email: string, senha: string): Promise<{ success: boolean; user?: User; error?: string }> {
+  static async loginUser(
+    email: string, 
+    senha: string
+  ): Promise<{ success: boolean; isExpired?: boolean; user?: User; error?: string }> {
     try {
       const emailFormatado = email.trim().toLowerCase();
+      const senhaFormatada = senha.trim();
+
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -76,17 +109,32 @@ export class StorageService {
       if (error) throw error;
 
       if (!profile) {
-        return { success: false, error: 'Utilizador não cadastrado na plataforma.' };
+        return { success: false, error: 'Usuário não encontrado na base de dados.' };
       }
 
       if (profile.is_blocked || profile.status === 'bloqueado') {
-        return { success: false, error: 'Conta bloqueada ou suspensa pela administração.' };
+        return { success: false, error: 'Acesso suspenso. Contate o administrador.' };
       }
 
-      if (profile.senha_hash && profile.senha_hash !== senha) {
+      if (profile.senha_hash && profile.senha_hash !== senhaFormatada) {
         return { success: false, error: 'E-mail ou senha incorretos.' };
       }
 
+      // Verificação da política de expiração de 30 dias
+      if (profile.senha_alterada_em) {
+        const dataAlteracao = new Date(profile.senha_alterada_em).getTime();
+        const trintaDiasMs = 30 * 24 * 60 * 60 * 1000;
+        if (Date.now() - dataAlteracao > trintaDiasMs) {
+          return {
+            success: false,
+            isExpired: true,
+            user: profile as User,
+            error: 'Sua senha expirou devido à política de segurança de 30 dias.'
+          };
+        }
+      }
+
+      // Atualiza o último login no Supabase
       await supabase
         .from('profiles')
         .update({ ultimo_login: new Date().toISOString() })
@@ -94,7 +142,7 @@ export class StorageService {
 
       return { success: true, user: profile as User };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Erro inesperado ao realizar login.' };
+      return { success: false, error: err.message || 'Erro ao realizar login no servidor.' };
     }
   }
 
@@ -147,7 +195,7 @@ export class StorageService {
   }
 
   // ---------------------------------------------------------------------------
-  // 3. OPERAÇÕES DE EMBARCAÇÕES & CERTIFICADOS (API SUPABASE)
+  // 3. OPERAÇÕES DA API SUPABASE (EMBARCAÇÕES E CERTIFICADOS)
   // ---------------------------------------------------------------------------
 
   static async carregarEmbarcacoesAPI(): Promise<any[]> {
