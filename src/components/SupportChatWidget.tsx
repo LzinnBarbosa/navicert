@@ -1,18 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { 
-  Bot, 
   X, 
   Send, 
   ArrowRight, 
   Ship, 
-  FileCheck2, 
-  BellRing, 
-  FileBarChart2, 
-  Settings, 
-  UserCheck, 
+  Compass,
   Sparkles,
-  Users,
-  Compass
+  MessageSquare
 } from "lucide-react";
 import { ActiveTab } from "../types/maritime";
 
@@ -42,15 +36,12 @@ interface SupportChatWidgetProps {
 function normalizarTexto(str: string): string {
   return str
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ") // Remove pontuação
+    .replace(/[^a-z0-9\s]/g, " ")
     .trim();
 }
 
-/**
- * Base de conhecimento determinística e parametrizada sobre a aplicação
- */
 interface KnowledgeItem {
   id: string;
   keywords: string[];
@@ -162,7 +153,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     {
       id: "init-1",
       sender: "bot",
-      text: "Olá! Sou o assistente de suporte do NavCert. O que você deseja encontrar no sistema?",
+      text: "Olá! Sou o assistente de navegação do NavCert. O que você deseja encontrar no sistema?",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -175,9 +166,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   }, [messages, isOpen]);
 
-  /**
-   * Motor de Relevância por Tokenização e Pontuação
-   */
   const findBestMatch = (userQuery: string): KnowledgeItem | null => {
     const normQuery = normalizarTexto(userQuery);
     if (!normQuery) return null;
@@ -189,7 +177,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     for (const item of KNOWLEDGE_BASE) {
       let score = 0;
 
-      // 1. Checagem de frases exatas (peso alto = 10 pontos)
       if (item.exactPhrases) {
         for (const phrase of item.exactPhrases) {
           const normPhrase = normalizarTexto(phrase);
@@ -199,7 +186,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
         }
       }
 
-      // 2. Checagem por sobreposição de palavras-chave (peso = 2 pontos cada)
       for (const kw of item.keywords) {
         const normKw = normalizarTexto(kw);
         if (queryTokens.includes(normKw)) {
@@ -215,7 +201,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
       }
     }
 
-    // Exige pontuação mínima de 2 para confirmar o match
     return highestScore >= 2 ? bestMatch : null;
   };
 
@@ -233,7 +218,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     if (!textToSend) setInput("");
 
-    // Processamento com pequeno delay para simular resposta natural
     setTimeout(() => {
       const match = findBestMatch(query);
 
@@ -285,69 +269,96 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
 
   return (
     <div className="fixed bottom-6 right-6 z-50 font-sans">
-      {/* BOTÃO FLUTUANTE (WIDGET CLOSED) */}
+      
+      {/* 1. BOTÃO FLUTUANTE CIRCULAR (FAB - FLOATING ACTION BUTTON) */}
       {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="relative group flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-400 hover:to-cyan-500 text-slate-950 font-extrabold rounded-full shadow-2xl shadow-teal-950/80 transition-all transform hover:scale-105 cursor-pointer border border-teal-300/40"
-        >
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-200 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-950"></span>
-          </span>
-          <Bot className="w-5 h-5 stroke-[2.5]" />
-          <span className="text-xs tracking-wide uppercase hidden sm:inline">Ajuda NavCert</span>
-        </button>
+        <div className="relative group">
+          
+          {/* Tooltip elegante no hover */}
+          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none translate-x-2 group-hover:translate-x-0">
+            <div className="bg-slate-900/90 text-cyan-300 border border-cyan-500/30 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap backdrop-blur-sm flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Assistente NavCert</span>
+            </div>
+          </div>
+
+          {/* Botão Principal Circular */}
+          <button
+            onClick={() => setIsOpen(true)}
+            aria-label="Abrir Assistente NavCert"
+            className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-2xl shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer group"
+          >
+            {/* Anel interno escuro para efeito de profundidade marítima */}
+            <div className="w-full h-full bg-[#03141d] rounded-full flex items-center justify-center relative overflow-hidden group-hover:bg-[#051c27] transition-colors">
+              
+              {/* Efeito de brilho de água/radar no fundo do botão */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 via-transparent to-teal-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+              {/* Ícone de Navio Central com Badge IA */}
+              <div className="relative flex items-center justify-center">
+                <Ship className="w-6 h-6 sm:w-7 sm:h-7 text-cyan-300 group-hover:text-white transition-colors transform group-hover:-rotate-6" />
+                <Sparkles className="w-3 h-3 text-amber-400 absolute -top-1.5 -right-2 animate-pulse" />
+              </div>
+
+              {/* Ponto indicador de status online (pulsante) */}
+              <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-slate-950"></span>
+              </span>
+
+            </div>
+          </button>
+        </div>
       )}
 
-      {/* JANELA DE CHAT (WIDGET OPEN) */}
+      {/* 2. JANELA FLUTUANTE DE CHAT (WIDGET OPEN) */}
       {isOpen && (
-        <div className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-teal-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
+        <div className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/80 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md">
           
-          {/* CABEÇALHO DO CHAT */}
-          <div className="bg-gradient-to-r from-[#03141d] to-[#082a38] p-4 border-b border-teal-900/50 flex items-center justify-between">
+          {/* CABEÇALHO MARÍTIMO */}
+          <div className="bg-gradient-to-r from-[#03141d] via-[#082a38] to-[#03141d] p-4 border-b border-cyan-900/50 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                <Compass className="w-5 h-5" />
+              <div className="p-2 rounded-2xl bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 shadow-inner">
+                <Compass className="w-5 h-5 text-cyan-400" />
               </div>
               <div>
-                <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                  Guia do Sistema
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  Guia NavCert
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </h3>
-                <p className="text-[10px] text-teal-300/60">Suporte e navegação direta</p>
+                <p className="text-[10px] text-cyan-300/70">Navegação e suporte em tempo real</p>
               </div>
             </div>
 
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1.5 text-teal-300/60 hover:text-white rounded-lg hover:bg-teal-900/50 transition-colors cursor-pointer"
+              className="p-2 text-cyan-400/60 hover:text-white rounded-xl hover:bg-cyan-900/40 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* ÁREA DE MENSAGENS */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 no-scrollbar bg-[#03151f]">
+          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 no-scrollbar bg-[#03151f]/90">
             {messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                  className={`max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed ${
                     msg.sender === "user"
-                      ? "bg-teal-500 text-slate-950 font-semibold rounded-tr-none shadow-md"
-                      : "bg-[#082635] text-teal-100 border border-teal-900/60 rounded-tl-none"
+                      ? "bg-gradient-to-r from-cyan-600 to-teal-500 text-white font-medium rounded-tr-none shadow-lg shadow-cyan-950/50"
+                      : "bg-[#082635] text-cyan-100 border border-cyan-900/60 rounded-tl-none shadow-md"
                   }`}
                 >
                   <p>{msg.text}</p>
 
-                  {/* BOTÃO DE AÇÃO DIRETA (DEEP-LINKING) */}
+                  {/* DEEP-LINKING ACTION BUTTON */}
                   {msg.action && (
                     <button
                       onClick={() => handleExecuteAction(msg.action)}
-                      className="mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 hover:text-white rounded-xl font-bold text-[11px] border border-teal-500/40 transition-all cursor-pointer shadow-sm"
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 hover:text-white rounded-xl font-bold text-[11px] border border-cyan-500/40 transition-all cursor-pointer shadow-sm"
                     >
                       <span>{msg.action.label}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -355,19 +366,19 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
                   )}
                 </div>
 
-                <span className="text-[9px] text-teal-400/40 mt-1 px-1">{msg.timestamp}</span>
+                <span className="text-[9px] text-cyan-400/40 mt-1 px-1">{msg.timestamp}</span>
               </div>
             ))}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* SUGESTÕES RÁPIDAS (CHIPS) */}
-          <div className="px-3 py-2 bg-[#021017] border-t border-teal-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {/* CHIPS DE SUGESTÃO RÁPIDA */}
+          <div className="px-3 py-2.5 bg-[#021017] border-t border-cyan-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {suggestionChips.map((chip, idx) => (
               <button
                 key={idx}
                 onClick={() => handleSendMessage(chip)}
-                className="px-2.5 py-1 rounded-lg bg-teal-950/80 hover:bg-teal-900/80 text-teal-300 border border-teal-800/50 text-[10px] whitespace-nowrap cursor-pointer transition-colors shrink-0"
+                className="px-2.5 py-1 rounded-xl bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-800/50 text-[10px] whitespace-nowrap cursor-pointer transition-colors shrink-0"
               >
                 {chip}
               </button>
@@ -380,21 +391,21 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
               e.preventDefault();
               handleSendMessage();
             }}
-            className="p-3 bg-[#03141d] border-t border-teal-900/50 flex items-center gap-2"
+            className="p-3 bg-[#03141d] border-t border-cyan-900/50 flex items-center gap-2"
           >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ex: Onde vejo as embarcações?"
-              className="flex-1 bg-[#051c27] border border-teal-900/60 rounded-xl px-3 py-2 text-xs text-teal-100 placeholder-teal-400/40 focus:outline-none focus:border-teal-400"
+              className="flex-1 bg-[#051c27] border border-cyan-900/60 rounded-2xl px-3.5 py-2 text-xs text-cyan-100 placeholder-cyan-400/40 focus:outline-none focus:border-cyan-400 transition-colors"
             />
             <button
               type="submit"
               disabled={!input.trim()}
-              className="p-2 bg-teal-500 hover:bg-teal-400 disabled:opacity-40 text-slate-950 font-bold rounded-xl transition-all cursor-pointer"
+              className="p-2.5 bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 disabled:opacity-40 text-slate-950 font-bold rounded-2xl transition-all cursor-pointer shadow-md shadow-cyan-950"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 text-slate-950" />
             </button>
           </form>
 

@@ -1,5 +1,19 @@
 // ---------------------------------------------------------------------------
-// 1. TIPOS DE PERMISSÃO E UTILIZADOR
+// 1. TIPOS DE NAVEGAÇÃO E ABAS
+// ---------------------------------------------------------------------------
+
+export type ActiveTab = 
+  | 'painel' 
+  | 'embarcacoes' 
+  | 'certificados' 
+  | 'alertas' 
+  | 'relatorios' 
+  | 'consultor' 
+  | 'usuarios' 
+  | 'configuracoes';
+
+// ---------------------------------------------------------------------------
+// 2. TIPOS DE PERMISSÃO E UTILIZADOR
 // ---------------------------------------------------------------------------
 
 export type UserRole = 'admin' | 'operador' | 'auditor';
@@ -48,7 +62,7 @@ export interface User {
 }
 
 // ---------------------------------------------------------------------------
-// 2. EMBARCAÇÕES E CERTIFICADOS
+// 3. EMBARCAÇÕES E CERTIFICADOS
 // ---------------------------------------------------------------------------
 
 export interface Vessel {
@@ -75,7 +89,7 @@ export interface Certificate {
 }
 
 // ---------------------------------------------------------------------------
-// 3. CONFIGURAÇÕES DA EMPRESA
+// 4. CONFIGURAÇÕES DA EMPRESA
 // ---------------------------------------------------------------------------
 
 export interface PrazosConfig {
