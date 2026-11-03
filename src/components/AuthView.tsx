@@ -8,26 +8,36 @@ import {
   EyeOff, 
   CheckCircle2, 
   AlertCircle, 
-  Shield 
+  Shield,
+  KeyRound,
+  ArrowLeft
 } from "lucide-react";
 import { User } from "../types/maritime";
-import { StorageService } from "../services/storage";
+import { supabase } from "../lib/supabaseClient";
+import { 
+  autenticarPorEmail, 
+  solicitarRecuperacaoSenha, 
+  atualizarSenhaComHistorico 
+} from "../services/authSecurityService";
 
 interface AuthViewProps {
   onLoginSuccess: (user: User) => void;
 }
 
+type TabMode = "login" | "register" | "forgot" | "expired";
+
 export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
-  const [tab, setTab] = useState<"login" | "register">("login");
+  const [tab, setTab] = useState<TabMode>("login");
   
   // Form de Login
   const [loginEmail, setLoginEmail] = useState("");
   const [loginSenha, setLoginSenha] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [loginSuccess, setLoginSuccess] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Form de Cadastro (Removido regRole para segurança)
+  // Form de Cadastro
   const [regNome, setRegNome] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regCargo, setRegCargo] = useState("");
@@ -38,29 +48,80 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
   const [regError, setRegError] = useState("");
   const [regLoading, setRegLoading] = useState(false);
 
+  // Form de Senha Expirada (30 Dias)
+  const [userIdExpirado, setUserIdExpirado] = useState<string | null>(null);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
+  const [showExpiredPassword, setShowExpiredPassword] = useState(false);
+
   const [, setIsLgpdModalOpen] = useState(false);
 
+  const limparMensagens = () => {
+    setLoginError("");
+    setRegError("");
+    setLoginSuccess("");
+  };
+
+  // 1. AUTENTICAÇÃO DE LOGIN E VALIDAÇÃO DE SEGURANÇA
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoginError("");
+    limparMensagens();
     setLoginLoading(true);
+
     try {
-      const res = await StorageService.loginUser(loginEmail, loginSenha);
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
-      } else {
-        setLoginError(res.error || "Credenciais inválidas.");
+      const resultado = await autenticarPorEmail(loginEmail);
+
+      // Usuário Não Cadastrado
+      if (resultado.status === "NAO_CADASTRADO") {
+        setLoginError(resultado.message);
+        setLoginLoading(false);
+        return;
       }
-    } catch {
-      setLoginError("Erro inesperado ao realizar login.");
+
+      const profile = resultado.profile;
+
+      // Verificação de Bloqueio
+      if (profile.is_blocked || profile.status === "bloqueado") {
+        setLoginError("Conta suspensa ou bloqueada. Entre em contato com a administração.");
+        setLoginLoading(false);
+        return;
+      }
+
+      // Validação da Senha
+      if (profile.senha_hash && profile.senha_hash !== loginSenha) {
+        setLoginError("E-mail ou senha incorretos.");
+        setLoginLoading(false);
+        return;
+      }
+
+      // Regra dos 30 Dias: Expiração de Senha
+      if (resultado.precisaRedefinirSenha) {
+        setUserIdExpirado(profile.id);
+        setLoginError("Sua senha expirou devido à política de segurança de 30 dias. Cadastre uma nova senha.");
+        setTab("expired");
+        setLoginLoading(false);
+        return;
+      }
+
+      // Atualizar timestamp do último login
+      await supabase
+        .from("profiles")
+        .update({ ultimo_login: new Date().toISOString() })
+        .eq("id", profile.id);
+
+      onLoginSuccess(profile as User);
+    } catch (err: any) {
+      setLoginError(err.message || "Erro inesperado ao realizar login.");
     } finally {
       setLoginLoading(false);
     }
   };
 
+  // 2. CADASTRO DE NOVO USUÁRIO
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setRegError("");
+    limparMensagens();
+
     if (regSenha !== regSenhaConfirma) {
       setRegError("As senhas digitadas não coincidem.");
       return;
@@ -69,26 +130,114 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
       setRegError("É necessário aceitar os termos de consentimento da LGPD.");
       return;
     }
+
     setRegLoading(true);
     try {
-      // REGRA DE SEGURANÇA: Todo novo cadastro inicia compulsoriamente como "auditor"
-      const res = await StorageService.registerUser({
+      const emailFormatado = regEmail.trim().toLowerCase();
+
+      // Dispara confirmação via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: emailFormatado,
+        password: regSenha,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: { nome: regNome }
+        }
+      });
+
+      if (authError) throw authError;
+
+      // Cria/Atualiza a entrada de perfil com role "auditor" por padrão
+      const { error: profileError } = await supabase.from("profiles").upsert({
+        id: authData.user?.id || `usr_${Date.now()}`,
         nome: regNome,
-        email: regEmail,
-        senha: regSenha,
+        email: emailFormatado,
         cargo: regCargo,
         role: "auditor",
-        termosLgpd: regLgpdConsent,
-      });
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
-      } else {
-        setRegError(res.error || "Erro ao realizar cadastro.");
-      }
-    } catch {
-      setRegError("Erro inesperado ao criar conta.");
+        senha_hash: regSenha,
+        senha_alterada_em: new Date().toISOString(),
+        historico_senhas: [regSenha],
+        status: "pendente",
+        email_confirmado: false,
+        termos_aceitos: true,
+        termos_lgpd_aceitos: true,
+        data_aceite_lgpd: new Date().toISOString()
+      }, { onConflict: "email" });
+
+      if (profileError) throw profileError;
+
+      setLoginSuccess("Cadastro realizado com sucesso! Um e-mail de confirmação foi enviado para sua caixa de entrada.");
+      setTab("login");
+      setRegSenha("");
+      setRegSenhaConfirma("");
+    } catch (err: any) {
+      setRegError(err.message || "Erro ao realizar cadastro.");
     } finally {
       setRegLoading(false);
+    }
+  };
+
+  // 3. RECUPERAÇÃO DE SENHA ("ESQUECEU A SENHA?")
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    limparMensagens();
+
+    if (!loginEmail) {
+      setLoginError("Informe o seu e-mail para solicitar a redefinição.");
+      return;
+    }
+
+    setLoginLoading(true);
+    try {
+      const res = await solicitarRecuperacaoSenha(loginEmail);
+      if (res.success) {
+        setLoginSuccess(res.message);
+      } else {
+        setLoginError(res.message);
+      }
+    } catch (err: any) {
+      setLoginError(err.message || "Erro ao solicitar redefinição de senha.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  // 4. ALTERAÇÃO DE SENHA EXPIRADA (HISTÓRICO IMPEDE REUSO)
+  const handleUpdateExpiredPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    limparMensagens();
+
+    if (novaSenha !== confirmarNovaSenha) {
+      setLoginError("As senhas digitadas não coincidem.");
+      return;
+    }
+
+    if (novaSenha.length < 6) {
+      setLoginError("A nova senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+
+    setLoginLoading(true);
+    try {
+      if (!userIdExpirado) throw new Error("Sessão expirada. Realize o login novamente.");
+
+      const res = await atualizarSenhaComHistorico(userIdExpirado, novaSenha);
+
+      if (!res.success) {
+        setLoginError(res.message);
+        setLoginLoading(false);
+        return;
+      }
+
+      setLoginSuccess("Senha atualizada com sucesso! Realize o login com a nova credencial.");
+      setTab("login");
+      setLoginSenha("");
+      setNovaSenha("");
+      setConfirmarNovaSenha("");
+    } catch (err: any) {
+      setLoginError(err.message || "Erro ao atualizar senha.");
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -108,32 +257,57 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
-          <div className="grid grid-cols-2 border-b border-slate-800 bg-slate-950/80 p-1">
-            <button
-              onClick={() => { setTab("login"); setLoginError(""); }}
-              className={`py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                tab === "login" ? "bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              Acessar Sistema
-            </button>
-            <button
-              onClick={() => { setTab("register"); setRegError(""); }}
-              className={`py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                tab === "register" ? "bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80" : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              Cadastrar Usuário
-            </button>
-          </div>
+          
+          {/* Aba de Navegação entre Login e Cadastro */}
+          {(tab === "login" || tab === "register") && (
+            <div className="grid grid-cols-2 border-b border-slate-800 bg-slate-950/80 p-1">
+              <button
+                onClick={() => { setTab("login"); limparMensagens(); }}
+                className={`py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  tab === "login" ? "bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Acessar Sistema
+              </button>
+              <button
+                onClick={() => { setTab("register"); limparMensagens(); }}
+                className={`py-2.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                  tab === "register" ? "bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Cadastrar Usuário
+              </button>
+            </div>
+          )}
 
           <div className="p-6">
-            {tab === "login" ? (
+            
+            {/* Mensagem de Sucesso Geral */}
+            {loginSuccess && (
+              <div className="mb-4 p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{loginSuccess}</span>
+              </div>
+            )}
+
+            {/* TAB 1: LOGIN */}
+            {tab === "login" && (
               <form onSubmit={handleLogin} className="space-y-4">
                 {loginError && (
-                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                    <span>{loginError}</span>
+                  <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs space-y-2">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                      <span>{loginError}</span>
+                    </div>
+                    {loginError.includes("não cadastrado") && (
+                      <button
+                        type="button"
+                        onClick={() => { limparMensagens(); setTab("register"); }}
+                        className="text-sky-400 hover:text-sky-300 font-bold underline block mt-1 cursor-pointer"
+                      >
+                        Clique aqui para realizar o cadastro agora →
+                      </button>
+                    )}
                   </div>
                 )}
                 <div>
@@ -153,9 +327,18 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-                    Senha de Acesso
-                  </label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                      Senha de Acesso
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => { limparMensagens(); setTab("forgot"); }}
+                      className="text-xs text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+                    >
+                      Esqueceu a senha?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
@@ -178,13 +361,16 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                 <button
                   type="submit"
                   disabled={loginLoading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md shadow-sky-950 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md shadow-sky-950 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <Lock className="w-4 h-4" />
                   <span>{loginLoading ? "Verificando..." : "Entrar no Sistema"}</span>
                 </button>
               </form>
-            ) : (
+            )}
+
+            {/* TAB 2: CADASTRO */}
+            {tab === "register" && (
               <form onSubmit={handleRegister} className="space-y-3.5">
                 {regError && (
                   <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
@@ -276,7 +462,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
 
-                {/* AVISO DE SEGURANÇA */}
                 <div className="p-2.5 rounded-xl bg-sky-950/40 border border-sky-800/50 text-[11px] text-sky-300 flex items-center gap-2">
                   <Shield className="w-4 h-4 shrink-0 text-sky-400" />
                   <span>
@@ -308,13 +493,144 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLoginSuccess }) => {
                 <button
                   type="submit"
                   disabled={regLoading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>{regLoading ? "Cadastrando..." : "Cadastrar e Acessar"}</span>
                 </button>
               </form>
             )}
+
+            {/* TAB 3: ESQUECEU A SENHA */}
+            {tab === "forgot" && (
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <KeyRound className="w-5 h-5 text-amber-400" />
+                  <h2 className="text-sm font-bold text-white">Recuperação de Senha</h2>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Informe o seu e-mail corporativo cadastrado. Enviaremos um link seguro para a redefinição de sua senha.
+                </p>
+
+                {loginError && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                    E-mail Cadastrado
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="usuario@navcert.com.br"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <span>{loginLoading ? "Enviando..." : "Enviar Link de Recuperação"}</span>
+                </button>
+
+                <div className="pt-3 border-t border-slate-800 text-center">
+                  <button
+                    type="button"
+                    onClick={() => { limparMensagens(); setTab("login"); }}
+                    className="text-xs text-slate-400 hover:text-slate-200 inline-flex items-center gap-1 font-medium cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Voltar ao Login</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 4: SENHA EXPIRADA (REGRA DE 30 DIAS) */}
+            {tab === "expired" && (
+              <form onSubmit={handleUpdateExpiredPassword} className="space-y-4">
+                <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-800/60 text-amber-300 text-xs space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-amber-400" />
+                    Atualização Obrigatória de Senha
+                  </p>
+                  <p className="text-[11px] text-amber-400/90">
+                    Sua senha ultrapassou o limite de 30 dias. Por política de segurança, cadastre uma nova senha (não é permitido utilizar senhas recentes).
+                  </p>
+                </div>
+
+                {loginError && (
+                  <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                    Nova Senha
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showExpiredPassword ? "text" : "password"}
+                      required
+                      minLength={6}
+                      value={novaSenha}
+                      onChange={(e) => setNovaSenha(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowExpiredPassword(!showExpiredPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                    >
+                      {showExpiredPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                    Confirmar Nova Senha
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showExpiredPassword ? "text" : "password"}
+                      required
+                      minLength={6}
+                      value={confirmarNovaSenha}
+                      onChange={(e) => setConfirmarNovaSenha(e.target.value)}
+                      placeholder="Repita a nova senha"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{loginLoading ? "Atualizando..." : "Atualizar Senha e Entrar"}</span>
+                </button>
+              </form>
+            )}
+
           </div>
         </div>
 

@@ -1,5 +1,6 @@
-import { supabase } from './supabaseClient'; // importa do seu supabaseClient.ts
+import { supabase } from './supabaseClient';
 import { Vessel, Certificate, PrazosConfig, User } from '../types/maritime';
+import { sanitizarPayloadPerfil } from '../utils/sanitizePayload';
 
 // ---------------------------------------------------------------------------
 // 1. USUÁRIOS E PERFIS
@@ -14,9 +15,33 @@ export const fetchUsersFromSupabase = async (): Promise<User[]> => {
 };
 
 export const saveUserProfileToSupabase = async (user: User): Promise<boolean> => {
-  const { error } = await supabase.from('profiles').upsert(user);
+  // Sanitiza o objeto do frontend garantindo compatibilidade com o esquema do banco
+  const payloadSeguro = sanitizarPayloadPerfil(user);
+  payloadSeguro.updated_at = new Date().toISOString();
+
+  // Resolve o conflito usando 'email' para atualizar a conta existente
+  const { error } = await supabase
+    .from('profiles')
+    .upsert(payloadSeguro, { onConflict: 'email' });
+
   if (error) {
     console.error('Erro ao salvar perfil no Supabase:', error);
+    throw error;
+  }
+  return true;
+};
+
+export const updateUserProfile = async (userId: string, profileData: Partial<User>): Promise<boolean> => {
+  const payloadSeguro = sanitizarPayloadPerfil(profileData);
+  payloadSeguro.updated_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from('profiles')
+    .update(payloadSeguro)
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Erro ao atualizar perfil no Supabase:', error);
     throw error;
   }
   return true;
