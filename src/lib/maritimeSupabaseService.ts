@@ -15,19 +15,34 @@ export const fetchUsersFromSupabase = async (): Promise<User[]> => {
 };
 
 export const saveUserProfileToSupabase = async (user: User): Promise<boolean> => {
-  // Sanitiza o objeto do frontend garantindo compatibilidade com o esquema do banco
+  // 1. Sanitiza o payload para conter apenas colunas válidas da tabela 'profiles'
   const payloadSeguro = sanitizarPayloadPerfil(user);
   payloadSeguro.updated_at = new Date().toISOString();
 
-  // Resolve o conflito usando 'email' para atualizar a conta existente
-  const { error } = await supabase
+  // 2. Executa a atualização (HTTP PATCH) filtrando pelo e-mail do utilizador
+  const { data, error } = await supabase
     .from('profiles')
-    .upsert(payloadSeguro, { onConflict: 'email' });
+    .update(payloadSeguro)
+    .eq('email', user.email)
+    .select();
 
   if (error) {
     console.error('Erro ao salvar perfil no Supabase:', error);
     throw error;
   }
+
+  // 3. Caso o utilizador ainda não exista na base de dados, realiza o insert inicial
+  if (!data || data.length === 0) {
+    const { error: insertError } = await supabase
+      .from('profiles')
+      .insert(payloadSeguro);
+
+    if (insertError) {
+      console.error('Erro ao inserir novo perfil:', insertError);
+      throw insertError;
+    }
+  }
+
   return true;
 };
 
