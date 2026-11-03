@@ -6,7 +6,7 @@ import {
   Ship, 
   Compass,
   Sparkles,
-  MessageSquare
+  GripVertical
 } from "lucide-react";
 import { ActiveTab } from "../types/maritime";
 
@@ -30,9 +30,6 @@ interface SupportChatWidgetProps {
   onNewCertificate?: () => void;
 }
 
-/**
- * Função utilitária para normalizar strings (remove acentos, caixa alta e pontuação)
- */
 function normalizarTexto(str: string): string {
   return str
     .normalize("NFD")
@@ -158,13 +155,93 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   ]);
 
+  // ENGINE DE ARRASTE (DRAG & DROP)
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartOffset = useRef({ x: 0, y: 0 });
+  const hasMoved = useRef(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Define a posição inicial no canto inferior direito ao carregar
+  useEffect(() => {
+    const initialX = window.innerWidth - 84;
+    const initialY = window.innerHeight - 84;
+    setPosition({ x: Math.max(16, initialX), y: Math.max(16, initialY) });
+
+    const handleResize = () => {
+      setPosition((prev) => {
+        if (!prev) return null;
+        return {
+          x: Math.min(prev.x, window.innerWidth - 84),
+          y: Math.min(prev.y, window.innerHeight - 84)
+        };
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isOpen]);
+
+  // INÍCIO DO ARRASTE (MOUSE / TOUCH)
+  const handleStartDrag = (clientX: number, clientY: number) => {
+    if (!position) return;
+    setIsDragging(true);
+    hasMoved.current = false;
+    dragStartOffset.current = {
+      x: clientX - position.x,
+      y: clientY - position.y
+    };
+  };
+
+  // MOVIMENTO DO ARRASTE
+  useEffect(() => {
+    const handleMove = (clientX: number, clientY: number) => {
+      if (!isDragging) return;
+      hasMoved.current = true;
+      const newX = Math.max(16, Math.min(window.innerWidth - 80, clientX - dragStartOffset.current.x));
+      const newY = Math.max(16, Math.min(window.innerHeight - 80, clientY - dragStartOffset.current.y));
+      setPosition({ x: newX, y: newY });
+    };
+
+    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    const handleEndDrag = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", handleEndDrag);
+      window.addEventListener("touchmove", onTouchMove);
+      window.addEventListener("touchend", handleEndDrag);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", handleEndDrag);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", handleEndDrag);
+    };
+  }, [isDragging]);
+
+  const handleButtonClick = () => {
+    // Só abre o chat se não tiver arrastado o botão pela tela
+    if (!hasMoved.current) {
+      setIsOpen(!isOpen);
+    }
+  };
 
   const findBestMatch = (userQuery: string): KnowledgeItem | null => {
     const normQuery = normalizarTexto(userQuery);
@@ -267,56 +344,85 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     "Exportar relatório em CSV"
   ];
 
+  if (!position) return null;
+
+  // Determina o alinhamento da janela de chat dependendo de onde o ícone foi arrastado
+  const isRightSide = position.x > window.innerWidth / 2;
+  const isBottomSide = position.y > window.innerHeight / 2;
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans">
-      
-      {/* 1. BOTÃO FLUTUANTE CIRCULAR (FAB - FLOATING ACTION BUTTON) */}
+    <div
+      style={{
+        position: "fixed",
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        zIndex: 9999,
+      }}
+      className="select-none font-sans"
+    >
+      {/* 1. BOTÃO CIRCULAR ARRASTÁVEL (FAB DRAGGABLE) */}
       {!isOpen && (
-        <div className="relative group">
+        <div className="relative group touch-none">
           
-          {/* Tooltip elegante no hover */}
-          <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none translate-x-2 group-hover:translate-x-0">
-            <div className="bg-slate-900/90 text-cyan-300 border border-cyan-500/30 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap backdrop-blur-sm flex items-center gap-1.5">
+          {/* Tooltip no Hover com indicação de arraste */}
+          <div className={`absolute ${isRightSide ? "right-full mr-3" : "left-full ml-3"} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none`}>
+            <div className="bg-slate-900/95 text-cyan-300 border border-cyan-500/30 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap backdrop-blur-sm flex items-center gap-1.5">
+              <GripVertical className="w-3.5 h-3.5 text-slate-400" />
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Assistente NavCert</span>
+              <span>Arraste ou clique para abrir</span>
             </div>
           </div>
 
-          {/* Botão Principal Circular */}
           <button
-            onClick={() => setIsOpen(true)}
-            aria-label="Abrir Assistente NavCert"
-            className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-2xl shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer group"
+            onMouseDown={(e) => handleStartDrag(e.clientX, e.clientY)}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) {
+                handleStartDrag(e.touches[0].clientX, e.touches[0].clientY);
+              }
+            }}
+            onClick={handleButtonClick}
+            aria-label="Assistente NavCert Arrastável"
+            className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-2xl shadow-cyan-500/40 ${
+              isDragging ? "scale-110 cursor-grabbing shadow-cyan-400/80 ring-4 ring-cyan-400/30" : "hover:scale-105 cursor-grab"
+            } transition-transform duration-150 group`}
           >
-            {/* Anel interno escuro para efeito de profundidade marítima */}
             <div className="w-full h-full bg-[#03141d] rounded-full flex items-center justify-center relative overflow-hidden group-hover:bg-[#051c27] transition-colors">
-              
-              {/* Efeito de brilho de água/radar no fundo do botão */}
               <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 via-transparent to-teal-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-              {/* Ícone de Navio Central com Badge IA */}
               <div className="relative flex items-center justify-center">
                 <Ship className="w-6 h-6 sm:w-7 sm:h-7 text-cyan-300 group-hover:text-white transition-colors transform group-hover:-rotate-6" />
                 <Sparkles className="w-3 h-3 text-amber-400 absolute -top-1.5 -right-2 animate-pulse" />
               </div>
 
-              {/* Ponto indicador de status online (pulsante) */}
               <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-slate-950"></span>
               </span>
-
             </div>
           </button>
         </div>
       )}
 
-      {/* 2. JANELA FLUTUANTE DE CHAT (WIDGET OPEN) */}
+      {/* 2. JANELA DE CHAT FIXADA AO ÍCONE ARRASTADO */}
       {isOpen && (
-        <div className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/80 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md">
-          
-          {/* CABEÇALHO MARÍTIMO */}
-          <div className="bg-gradient-to-r from-[#03141d] via-[#082a38] to-[#03141d] p-4 border-b border-cyan-900/50 flex items-center justify-between">
+        <div
+          style={{
+            position: "absolute",
+            [isBottomSide ? "bottom" : "top"]: "0px",
+            [isRightSide ? "right" : "left"]: "0px",
+          }}
+          className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/90 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md"
+        >
+          {/* CABEÇALHO COM ÁREA DE PEGA PARA ARRASTAR A JANELA */}
+          <div
+            onMouseDown={(e) => handleStartDrag(e.clientX, e.clientY)}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) {
+                handleStartDrag(e.touches[0].clientX, e.touches[0].clientY);
+              }
+            }}
+            className="bg-gradient-to-r from-[#03141d] via-[#082a38] to-[#03141d] p-4 border-b border-cyan-900/50 flex items-center justify-between cursor-grab active:cursor-grabbing select-none"
+          >
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-2xl bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 shadow-inner">
                 <Compass className="w-5 h-5 text-cyan-400" />
@@ -326,7 +432,9 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
                   Guia NavCert
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </h3>
-                <p className="text-[10px] text-cyan-300/70">Navegação e suporte em tempo real</p>
+                <p className="text-[10px] text-cyan-300/70 flex items-center gap-1">
+                  <GripVertical className="w-3 h-3 text-cyan-400/50 inline" /> Arraste por este cabeçalho
+                </p>
               </div>
             </div>
 
@@ -338,7 +446,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             </button>
           </div>
 
-          {/* ÁREA DE MENSAGENS */}
+          {/* MENSAGENS */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3.5 no-scrollbar bg-[#03151f]/90">
             {messages.map((msg) => (
               <div
@@ -354,7 +462,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
                 >
                   <p>{msg.text}</p>
 
-                  {/* DEEP-LINKING ACTION BUTTON */}
                   {msg.action && (
                     <button
                       onClick={() => handleExecuteAction(msg.action)}
@@ -372,7 +479,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* CHIPS DE SUGESTÃO RÁPIDA */}
+          {/* CHIPS */}
           <div className="px-3 py-2.5 bg-[#021017] border-t border-cyan-900/40 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {suggestionChips.map((chip, idx) => (
               <button
@@ -385,7 +492,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             ))}
           </div>
 
-          {/* CAMPO DE DIGITAÇÃO */}
+          {/* FORMULÁRIO */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
