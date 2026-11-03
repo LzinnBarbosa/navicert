@@ -155,28 +155,29 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   ]);
 
-  // ENGINE DE ARRASTE (DRAG & DROP)
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  // ---------------------------------------------------------------------------
+  // MOTOR DE ARRASTE CORRIGIDO (DRAG & DROP ENGINE)
+  // ---------------------------------------------------------------------------
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => ({
+    x: typeof window !== "undefined" ? Math.max(20, window.innerWidth - 84) : 800,
+    y: typeof window !== "undefined" ? Math.max(20, window.innerHeight - 84) : 600,
+  }));
+
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartOffset = useRef({ x: 0, y: 0 });
-  const hasMoved = useRef(false);
+  const isDraggingRef = useRef(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const elementStartPos = useRef({ x: 0, y: 0 });
+  const hasMovedFar = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Define a posição inicial no canto inferior direito ao carregar
+  // Reajusta limites ao redimensionar a janela
   useEffect(() => {
-    const initialX = window.innerWidth - 84;
-    const initialY = window.innerHeight - 84;
-    setPosition({ x: Math.max(16, initialX), y: Math.max(16, initialY) });
-
     const handleResize = () => {
-      setPosition((prev) => {
-        if (!prev) return null;
-        return {
-          x: Math.min(prev.x, window.innerWidth - 84),
-          y: Math.min(prev.y, window.innerHeight - 84)
-        };
-      });
+      setPosition((prev) => ({
+        x: Math.min(prev.x, window.innerWidth - 80),
+        y: Math.min(prev.y, window.innerHeight - 80),
+      }));
     };
 
     window.addEventListener("resize", handleResize);
@@ -189,57 +190,85 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     }
   }, [messages, isOpen]);
 
-  // INÍCIO DO ARRASTE (MOUSE / TOUCH)
-  const handleStartDrag = (clientX: number, clientY: number) => {
-    if (!position) return;
+  // INÍCIO DO ARRASTE
+  const startDrag = (clientX: number, clientY: number) => {
+    isDraggingRef.current = true;
     setIsDragging(true);
-    hasMoved.current = false;
-    dragStartOffset.current = {
-      x: clientX - position.x,
-      y: clientY - position.y
-    };
+    hasMovedFar.current = false;
+    dragStartPos.current = { x: clientX, y: clientY };
+    elementStartPos.current = { ...position };
   };
 
-  // MOVIMENTO DO ARRASTE
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Apenas clique com o botão esquerdo
+    e.preventDefault();
+    e.stopPropagation();
+    startDrag(e.clientX, e.clientY);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      startDrag(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  };
+
+  // MOVIMENTAÇÃO GLOBAL (WINDOW LISTENERS)
   useEffect(() => {
     const handleMove = (clientX: number, clientY: number) => {
-      if (!isDragging) return;
-      hasMoved.current = true;
-      const newX = Math.max(16, Math.min(window.innerWidth - 80, clientX - dragStartOffset.current.x));
-      const newY = Math.max(16, Math.min(window.innerHeight - 80, clientY - dragStartOffset.current.y));
+      if (!isDraggingRef.current) return;
+
+      const deltaX = clientX - dragStartPos.current.x;
+      const deltaY = clientY - dragStartPos.current.y;
+
+      // Trava de sensibilidade de 4px para não arrastar acidentalmente no clique simples
+      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+        hasMovedFar.current = true;
+      }
+
+      const newX = Math.max(16, Math.min(window.innerWidth - 75, elementStartPos.current.x + deltaX));
+      const newY = Math.max(16, Math.min(window.innerHeight - 75, elementStartPos.current.y + deltaY));
+
       setPosition({ x: newX, y: newY });
     };
 
-    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const onMouseMove = (e: MouseEvent) => {
+      if (isDraggingRef.current) {
+        e.preventDefault();
+        handleMove(e.clientX, e.clientY);
+      }
+    };
+
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
+      if (isDraggingRef.current && e.touches.length > 0) {
         handleMove(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
 
-    const handleEndDrag = () => {
-      setIsDragging(false);
+    const stopDrag = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+      }
     };
 
-    if (isDragging) {
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", handleEndDrag);
-      window.addEventListener("touchmove", onTouchMove);
-      window.addEventListener("touchend", handleEndDrag);
-    }
+    window.addEventListener("mousemove", onMouseMove, { capture: true });
+    window.addEventListener("mouseup", stopDrag, { capture: true });
+    window.addEventListener("touchmove", onTouchMove, { capture: true });
+    window.addEventListener("touchend", stopDrag, { capture: true });
 
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", handleEndDrag);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", handleEndDrag);
+      window.removeEventListener("mousemove", onMouseMove, { capture: true });
+      window.removeEventListener("mouseup", stopDrag, { capture: true });
+      window.removeEventListener("touchmove", onTouchMove, { capture: true });
+      window.removeEventListener("touchend", stopDrag, { capture: true });
     };
-  }, [isDragging]);
+  }, []);
 
-  const handleButtonClick = () => {
-    // Só abre o chat se não tiver arrastado o botão pela tela
-    if (!hasMoved.current) {
-      setIsOpen(!isOpen);
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Só alterna a abertura do chat se não tiver movido o ícone pela tela
+    if (!hasMovedFar.current) {
+      setIsOpen((prev) => !prev);
     }
   };
 
@@ -344,9 +373,6 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
     "Exportar relatório em CSV"
   ];
 
-  if (!position) return null;
-
-  // Determina o alinhamento da janela de chat dependendo de onde o ícone foi arrastado
   const isRightSide = position.x > window.innerWidth / 2;
   const isBottomSide = position.y > window.innerHeight / 2;
 
@@ -364,27 +390,23 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
       {!isOpen && (
         <div className="relative group touch-none">
           
-          {/* Tooltip no Hover com indicação de arraste */}
+          {/* Tooltip explicativo no hover */}
           <div className={`absolute ${isRightSide ? "right-full mr-3" : "left-full ml-3"} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none`}>
             <div className="bg-slate-900/95 text-cyan-300 border border-cyan-500/30 text-xs font-semibold px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap backdrop-blur-sm flex items-center gap-1.5">
               <GripVertical className="w-3.5 h-3.5 text-slate-400" />
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Arraste ou clique para abrir</span>
+              <span>Clique para abrir • Segure para mover</span>
             </div>
           </div>
 
           <button
-            onMouseDown={(e) => handleStartDrag(e.clientX, e.clientY)}
-            onTouchStart={(e) => {
-              if (e.touches.length > 0) {
-                handleStartDrag(e.touches[0].clientX, e.touches[0].clientY);
-              }
-            }}
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
             onClick={handleButtonClick}
             aria-label="Assistente NavCert Arrastável"
             className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-cyan-600 via-teal-500 to-emerald-400 p-[1.5px] shadow-2xl shadow-cyan-500/40 ${
-              isDragging ? "scale-110 cursor-grabbing shadow-cyan-400/80 ring-4 ring-cyan-400/30" : "hover:scale-105 cursor-grab"
-            } transition-transform duration-150 group`}
+              isDragging ? "scale-110 cursor-grabbing ring-4 ring-cyan-400/40" : "hover:scale-105 cursor-grab"
+            } transition-all duration-150 group`}
           >
             <div className="w-full h-full bg-[#03141d] rounded-full flex items-center justify-center relative overflow-hidden group-hover:bg-[#051c27] transition-colors">
               <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 via-transparent to-teal-400/20 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -403,7 +425,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
         </div>
       )}
 
-      {/* 2. JANELA DE CHAT FIXADA AO ÍCONE ARRASTADO */}
+      {/* 2. JANELA DE CHAT FLUTUANTE (FIXADA AO BOTÃO ARRASTADO) */}
       {isOpen && (
         <div
           style={{
@@ -413,14 +435,10 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
           }}
           className="w-[360px] sm:w-[400px] h-[520px] bg-[#051c27] border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-950/90 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-300 backdrop-blur-md"
         >
-          {/* CABEÇALHO COM ÁREA DE PEGA PARA ARRASTAR A JANELA */}
+          {/* CABEÇALHO COM ÁREA DE ARRASTE */}
           <div
-            onMouseDown={(e) => handleStartDrag(e.clientX, e.clientY)}
-            onTouchStart={(e) => {
-              if (e.touches.length > 0) {
-                handleStartDrag(e.touches[0].clientX, e.touches[0].clientY);
-              }
-            }}
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
             className="bg-gradient-to-r from-[#03141d] via-[#082a38] to-[#03141d] p-4 border-b border-cyan-900/50 flex items-center justify-between cursor-grab active:cursor-grabbing select-none"
           >
             <div className="flex items-center gap-3">
@@ -433,7 +451,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 </h3>
                 <p className="text-[10px] text-cyan-300/70 flex items-center gap-1">
-                  <GripVertical className="w-3 h-3 text-cyan-400/50 inline" /> Arraste por este cabeçalho
+                  <GripVertical className="w-3 h-3 text-cyan-400/50 inline" /> Arraste para mover a janela
                 </p>
               </div>
             </div>
@@ -446,7 +464,7 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             </button>
           </div>
 
-          {/* MENSAGENS */}
+          {/* ÁREA DE MENSAGENS */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3.5 no-scrollbar bg-[#03151f]/90">
             {messages.map((msg) => (
               <div
