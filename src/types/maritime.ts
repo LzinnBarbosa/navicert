@@ -65,6 +65,8 @@ export interface User {
 // 3. EMBARCAÇÕES E CERTIFICADOS
 // ---------------------------------------------------------------------------
 
+export type CertStatus = 'vencido' | 'critico' | 'atencao' | 'valido';
+
 export interface Vessel {
   id: string;
   nome: string;
@@ -81,6 +83,7 @@ export interface Certificate {
   vessel_id: string;
   tipo: string;
   numero?: string;
+  tipo_vistoria?: string;
   data_emissao?: string;
   data_validade: string;
   orgao_emissor?: string;
@@ -96,8 +99,11 @@ export interface PrazosConfig {
   empresa_nome: string;
   alerta_amarelo_dias?: number;
   alerta_vermelho_dias?: number;
+  dias_critico?: number;
+  dias_atencao?: number;
   [key: string]: any;
 }
+
 // --- PERMISSÕES PADRÃO POR PERFIL ---
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, UserPermissions> = {
   admin: {

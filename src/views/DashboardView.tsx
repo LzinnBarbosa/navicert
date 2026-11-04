@@ -45,7 +45,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const vesselMap = new Map<string, Vessel>(vessels.map((v) => [v.id, v]));
 
   // Categorize certificates
-  const counts = {
+  const counts : Record<CertStatus, number> = {
     vencido: 0,
     critico: 0,
     atencao: 0,
