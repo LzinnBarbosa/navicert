@@ -1,28 +1,5 @@
 @import "tailwindcss";
 
-/* Otimização Global do Tailwind v4: Mapeia as cores de todos os componentes TSX */
-@theme {
-  /* Substitui o fundo esverdeado/ciano por Azul Naval Sólido Corporativo */
-  --color-slate-950: #080d1a;
-  --color-slate-900: #0f172a;
-  --color-slate-850: #152033;
-  --color-slate-800: #1e293b;
-  --color-slate-700: #334155;
-
-  /* Redireciona tons de Ciano/Teal para Azul Marítimo B2B */
-  --color-teal-300: #7dd3fc;
-  --color-teal-400: #38bdf8;
-  --color-teal-500: #0284c7;
-  --color-teal-600: #0369a1;
-  --color-teal-800: #1e293b;
-  --color-teal-900: #0f172a;
-
-  /* Ajusta os tons Sky/Sky-Blue */
-  --color-sky-400: #38bdf8;
-  --color-sky-500: #0284c7;
-  --color-sky-600: #0369a1;
-}
-
 @layer base {
   :root {
     --bg-app: #080d1a;
@@ -52,33 +29,53 @@
   }
 }
 
-/* Força remoção de fundos verdosos/customizados antigos */
+/* --- OVERRIDES GLOBAIS DE PALETA B2B --- */
+
+/* Força a troca dos fundos esverdeados antigos (#061b24, #031923, #020e14) por Slate 900 */
 [class*="bg-[#061b24]"],
 [class*="bg-[#031923]"],
-[class*="bg-[#020e14]"] {
+[class*="bg-[#020e14]"],
+[class*="bg-[#0b1120]"],
+[class*="bg-[#151e32]"] {
   background-color: #0f172a !important;
 }
 
-/* Força substituição de bordas esverdeadas antigas */
+/* Fundo da Barra Lateral e Navegação Principal */
+aside, 
+nav,
+header {
+  background-color: #080d1a !important;
+}
+
+/* Substitui bordas ciano/verdes por Slate 800 */
 [class*="border-teal-900"],
 [class*="border-teal-800"],
-[class*="border-teal-500"] {
+[class*="border-teal-500"],
+[class*="border-sky-900"] {
   border-color: #1e293b !important;
 }
 
-/* Botão Primário Corporativo (Sólido, sem efeito neon) */
+/* Substitui textos ciano fluorescentes por Azul Claro Marítimo */
+[class*="text-teal-400"],
+[class*="text-teal-300"] {
+  color: #38bdf8 !important;
+}
+
+/* Botão Primário Sólido Corporativo */
 .btn-primary {
   background-color: #0284c7 !important;
   background-image: none !important;
   color: #ffffff !important;
   font-weight: 600;
   border-radius: 0.5rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: background-color 0.15s ease-in-out;
+  border: 1px solid #0284c7 !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+  transition: all 0.15s ease-in-out;
 }
 
 .btn-primary:hover {
   background-color: #0369a1 !important;
+  border-color: #0369a1 !important;
   box-shadow: none !important;
   transform: none !important;
 }
