@@ -106,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Links de Navegação Vertical com React Router */}
+      {/* Links de Navegação Vertical */}
       <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto no-scrollbar">
         {navItems.map((item) => {
           const Icon = item.icon;

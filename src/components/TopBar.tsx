@@ -19,8 +19,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   onPrint,
   currentUser,
 }) => {
-  const canCreateVessel = currentUser?.permissions?.can_create_vessel ?? true;
-  const canCreateCert = currentUser?.permissions?.can_create_cert ?? true;
+  const isAuditor = currentUser?.role === "auditor";
+
+  // Se for Auditor, por padrão não exibe botões de criação, a não ser que tenha permissão explícita
+  const canCreateVessel = currentUser?.permissions?.can_create_vessel ?? (!isAuditor);
+  const canCreateCert = currentUser?.permissions?.can_create_cert ?? (!isAuditor);
 
   return (
     <header className="sticky top-0 z-20 bg-[#090d16]/90 backdrop-blur-md border-b border-slate-800/80 px-6 py-3 flex items-center justify-between gap-4">
