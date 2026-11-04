@@ -169,6 +169,11 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fecha o widget automaticamente sempre que a aba/tela ativa mudar
+  useEffect(() => {
+    setIsOpen(false);
+  }, [activeTab]);
+
   useEffect(() => {
     const handleResize = () => {
       setPosition((prev) => ({
@@ -421,8 +426,14 @@ export const SupportChatWidget: React.FC<SupportChatWidgetProps> = ({
             </div>
 
             <button
-              onClick={() => setIsOpen(false)}
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+              }}
               className="p-2 text-cyan-400/60 hover:text-white rounded-xl hover:bg-cyan-900/40 transition-colors cursor-pointer"
+              aria-label="Fechar Guia"
             >
               <X className="w-5 h-5" />
             </button>
