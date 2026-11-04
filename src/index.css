@@ -2,82 +2,117 @@
 
 @layer base {
   :root {
-    --bg-app: #080d1a;
-    --bg-card: #0f172a;
-    --bg-card-hover: #1e293b;
-    --bg-input: #020617;
+    /* Fundo da Aplicação: Azul Marinho Profundo Corporativo */
+    --bg-app: #0b132b;
+    
+    /* Superfícies Sólidas dos Cards */
+    --bg-card: #1c2541;
+    --bg-card-hover: #233055;
+    --bg-input: #0a0f1d;
+    
+    /* Bordas de Alta Precisão (Sem Efeito Neon) */
+    --border-subtle: #2b3a67;
+    --border-active: #0077b6;
 
-    --border-subtle: #1e293b;
-    --border-active: #0284c7;
-
-    --primary: #0284c7;
-    --primary-hover: #0369a1;
+    /* Ações e Identidade da Marca */
+    --primary: #0077b6;
+    --primary-hover: #023e8a;
     --accent: #d97706;
 
-    --status-valid-bg: rgba(16, 185, 129, 0.1);
-    --status-valid-text: #34d399;
-    --status-warning-bg: rgba(245, 158, 11, 0.1);
-    --status-warning-text: #fbbf24;
-    --status-expired-bg: rgba(239, 68, 68, 0.1);
-    --status-expired-text: #f87171;
+    /* Status Regulatórios (Cores Sólidas e Discretas) */
+    --status-valid-bg: rgba(5, 150, 105, 0.15);
+    --status-valid-text: #10b981;
+    --status-warning-bg: rgba(217, 119, 6, 0.15);
+    --status-warning-text: #f59e0b;
+    --status-expired-bg: rgba(220, 38, 38, 0.15);
+    --status-expired-text: #ef4444;
   }
 
   html, body {
-    background-color: #080d1a !important;
+    background-color: #0b132b !important;
     color: #f8fafc;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
 }
 
-/* --- OVERRIDES GLOBAIS DE PALETA B2B --- */
+/* ======================================================
+   RESOBREPOSIÇÃO FORÇADA DE CLASSES TAILWIND HARDCODED
+   ====================================================== */
 
-/* Força a troca dos fundos esverdeados antigos (#061b24, #031923, #020e14) por Slate 900 */
+/* Neutraliza os fundos esverdeados e ciano antigos nos componentes */
 [class*="bg-[#061b24]"],
 [class*="bg-[#031923]"],
 [class*="bg-[#020e14]"],
 [class*="bg-[#0b1120]"],
-[class*="bg-[#151e32]"] {
-  background-color: #0f172a !important;
+[class*="bg-[#151e32]"],
+[class*="bg-teal-"],
+[class*="bg-cyan-"] {
+  background-color: #1c2541 !important;
 }
 
-/* Fundo da Barra Lateral e Navegação Principal */
+/* Barra Lateral, TopBar e Fundo da Aplicação */
+body, 
+#root, 
+main {
+  background-color: #0b132b !important;
+}
+
 aside, 
-nav,
-header {
-  background-color: #080d1a !important;
+header,
+nav {
+  background-color: #0c1836 !important;
+  border-color: #2b3a67 !important;
 }
 
-/* Substitui bordas ciano/verdes por Slate 800 */
-[class*="border-teal-900"],
-[class*="border-teal-800"],
-[class*="border-teal-500"],
+/* Substitui Bordas Ciano/Verde por Azul Naval Estruturado */
+[class*="border-teal-"],
+[class*="border-cyan-"],
 [class*="border-sky-900"] {
-  border-color: #1e293b !important;
+  border-color: #2b3a67 !important;
 }
 
-/* Substitui textos ciano fluorescentes por Azul Claro Marítimo */
+/* Substitui Textos Ciano Fluorescentes por Azul Claro Marítimo */
 [class*="text-teal-400"],
-[class*="text-teal-300"] {
+[class*="text-teal-300"],
+[class*="text-cyan-400"] {
   color: #38bdf8 !important;
 }
 
-/* Botão Primário Sólido Corporativo */
-.btn-primary {
-  background-color: #0284c7 !important;
-  background-image: none !important;
-  color: #ffffff !important;
-  font-weight: 600;
-  border-radius: 0.5rem;
-  border: 1px solid #0284c7 !important;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
-  transition: all 0.15s ease-in-out;
+/* Redireciona os ícones e badges verdes neon */
+[class*="text-emerald-400"],
+[class*="text-green-400"] {
+  color: #10b981 !important;
 }
 
-.btn-primary:hover {
-  background-color: #0369a1 !important;
-  border-color: #0369a1 !important;
+/* Botões Primários Sólidos B2B */
+.btn-primary,
+button[class*="bg-teal"],
+button[class*="bg-sky"] {
+  background-color: #0077b6 !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border-radius: 0.375rem !important;
+  border: 1px solid #0077b6 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+.btn-primary:hover,
+button[class*="bg-teal"]:hover,
+button[class*="bg-sky"]:hover {
+  background-color: #023e8a !important;
+  border-color: #023e8a !important;
   box-shadow: none !important;
   transform: none !important;
+}
+
+/* Remoção de Sombras Neon e Blur */
+[class*="shadow-teal"],
+[class*="shadow-sky"],
+[class*="backdrop-blur"] {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+  backdrop-filter: none !important;
 }
 
 /* Esconde o contêiner de impressão na tela */
