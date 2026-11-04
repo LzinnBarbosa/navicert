@@ -60,7 +60,7 @@ export const ConsultantView: React.FC<ConsultantViewProps> = ({
         <div className="space-y-2">
           <h2 className="text-xl font-bold text-white tracking-tight">Módulo Restrito pelo Administrador</h2>
           <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
-            O acesso às consultas de Inteligência Artificial para análise regulatória marítima está desativado para o seu usuário. Solicite permissão ao Administrador (<strong>wcarlos061@gmail.com</strong>).
+            O acesso às consultas de Inteligência Artificial para análise regulatória marítima está desativado para o seu usuário. Solicite permissão ao Administrador.
           </p>
         </div>
       </div>
