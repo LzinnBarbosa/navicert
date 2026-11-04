@@ -98,3 +98,60 @@ export interface PrazosConfig {
   alerta_vermelho_dias?: number;
   [key: string]: any;
 }
+// --- PERMISSÕES PADRÃO POR PERFIL ---
+export const DEFAULT_ROLE_PERMISSIONS: Record<string, UserPermissions> = {
+  admin: {
+    can_create_vessel: true,
+    can_edit_vessel: true,
+    can_delete_vessel: true,
+    can_create_cert: true,
+    can_edit_cert: true,
+    can_delete_cert: true,
+    can_access_ai: true,
+    can_export_reports: true,
+    can_manage_settings: true,
+    can_manage_users: true,
+  },
+  operador: {
+    can_create_vessel: true,
+    can_edit_vessel: true,
+    can_delete_vessel: false,
+    can_create_cert: true,
+    can_edit_cert: true,
+    can_delete_cert: false,
+    can_access_ai: true,
+    can_export_reports: true,
+    can_manage_settings: false,
+    can_manage_users: false,
+  },
+  auditor: {
+    can_create_vessel: false,
+    can_edit_vessel: false,
+    can_delete_vessel: false,
+    can_create_cert: false,
+    can_edit_cert: false,
+    can_delete_cert: false,
+    can_access_ai: true,
+    can_export_reports: true,
+    can_manage_settings: false,
+    can_manage_users: false,
+  },
+};
+
+// --- LISTA DE TIPOS DE EMBARCAÇÃO ---
+export const TIPOS_EMBARCACAO = [
+  "Empurrador",
+  "Balsa",
+  "Rebocador",
+  "Lancha",
+  "Carga Geral",
+  "Passageiros",
+  "Ferry-boat",
+  "Balsa Tanque / Combustível",
+  "Flutuante / Dique",
+  "Barcaça",
+  "Draga",
+  "Pesqueiro",
+  "Apoio Marítimo / Off-shore",
+  "Outro"
+] as const;

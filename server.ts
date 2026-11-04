@@ -153,12 +153,16 @@ function responderErro(res: express.Response, error: any, mensagemPublica: strin
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 async function inicializarBancoPostgres() {
+  // 🟢 TRAVA DE SEGURANÇA: Se não houver DATABASE_URL no .env, não tenta conectar no 127.0.0.1
+  if (!process.env.DATABASE_URL) {
+    console.warn('⚠️ [NavCert] DATABASE_URL não encontrada no .env. Inicialização do banco PostgreSQL ignorada localmente.');
+    return;
+  }
+
   try {
     // 1. Tabela de Embarcações
     await pool.query(`
@@ -271,7 +275,6 @@ async function inicializarBancoPostgres() {
   }
 }
 inicializarBancoPostgres();
-
 // Health check endpoint
 app.get('/api/health', async (_req, res) => {
   try {
