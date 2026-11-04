@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { NavLink } from "react-router-dom";
 import { 
   Anchor, 
   LayoutDashboard, 
@@ -23,8 +24,19 @@ interface SidebarProps {
   alertCount: { vencidos: number; criticos: number; atencao: number };
   currentUser: User | null;
   onLogout: () => void;
-  onOpenProfile?: () => void; // Prop declarada para resolver o erro no App.tsx
+  onOpenProfile?: () => void;
   empresaNome?: string;
+}
+
+interface NavItem {
+  id: ActiveTab;
+  label: string;
+  path: string;
+  icon: React.ElementType;
+  badge?: number | null;
+  badgeColor?: string;
+  highlight?: boolean;
+  isSpecial?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -41,21 +53,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const totalUrgent = alertCount.vencidos + alertCount.criticos;
   const canManageUsers = currentUser?.role === "admin" || currentUser?.permissions?.can_manage_users;
 
-  const navItems = [
-    { id: "painel" as ActiveTab, label: "Painel", icon: LayoutDashboard },
-    { id: "embarcacoes" as ActiveTab, label: "Embarcações", icon: Ship },
-    { id: "certificados" as ActiveTab, label: "Certificados", icon: FileCheck2 },
+  const navItems: NavItem[] = [
+    { id: "painel", label: "Painel", path: "/painel", icon: LayoutDashboard },
+    { id: "embarcacoes", label: "Embarcações", path: "/embarcacoes", icon: Ship },
+    { id: "certificados", label: "Certificados", path: "/certificados", icon: FileCheck2 },
     { 
-      id: "alertas" as ActiveTab, 
+      id: "alertas", 
       label: "Alertas", 
+      path: "/alertas", 
       icon: BellRing, 
       badge: totalUrgent > 0 ? totalUrgent : null,
       badgeColor: alertCount.vencidos > 0 ? "bg-rose-500 text-white" : "bg-amber-500 text-slate-950"
     },
-    { id: "relatorios" as ActiveTab, label: "Relatórios", icon: FileBarChart2 },
-    { id: "consultor" as ActiveTab, label: "Consultor IA", icon: Sparkles, highlight: true },
-    ...(canManageUsers ? [{ id: "usuarios" as ActiveTab, label: "Usuários & Acesso", icon: Users, isSpecial: true }] : []),
-    { id: "configuracoes" as ActiveTab, label: "Configurações", icon: Settings },
+    { id: "relatorios", label: "Relatórios", path: "/relatorios", icon: FileBarChart2 },
+    { id: "consultor", label: "Consultor IA", path: "/consultor-ia", icon: Sparkles, highlight: true },
+    ...(canManageUsers ? [{ id: "usuarios" as ActiveTab, label: "Usuários & Acesso", path: "/usuarios", icon: Users, isSpecial: true }] : []),
+    { id: "configuracoes", label: "Configurações", path: "/configuracoes", icon: Settings },
   ];
 
   return (
@@ -93,52 +106,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Links de Navegação Vertical */}
+      {/* Links de Navegação Vertical com React Router */}
       <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto no-scrollbar">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
+          const isCurrentActive = activeTab === item.id;
+
           return (
-            <button
+            <NavLink
               key={item.id}
+              to={item.path}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
-                isActive
-                  ? "bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm"
-                  : "text-teal-200/60 hover:text-white hover:bg-teal-900/30"
-              } ${item.highlight && !isActive ? "text-amber-400 hover:text-amber-300" : ""}`}
+              className={({ isActive }) => {
+                const active = isActive || isCurrentActive;
+                return `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
+                  active
+                    ? "bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm"
+                    : "text-teal-200/60 hover:text-white hover:bg-teal-900/30"
+                } ${item.highlight && !active ? "text-amber-400 hover:text-amber-300" : ""}`;
+              }}
               title={collapsed ? item.label : undefined}
             >
-              <Icon
-                className={`w-5 h-5 shrink-0 ${
-                  isActive
-                    ? "text-teal-400"
-                    : item.highlight
-                    ? "text-amber-400"
-                    : item.isSpecial
-                    ? "text-cyan-400"
-                    : "text-teal-300/60"
-                }`}
-              />
+              {({ isActive }) => {
+                const active = isActive || isCurrentActive;
+                return (
+                  <>
+                    <Icon
+                      className={`w-5 h-5 shrink-0 transition-colors ${
+                        active
+                          ? "text-teal-400"
+                          : item.highlight
+                          ? "text-amber-400"
+                          : item.isSpecial
+                          ? "text-cyan-400"
+                          : "text-teal-300/60"
+                      }`}
+                    />
 
-              {!collapsed && <span className="truncate">{item.label}</span>}
+                    {!collapsed && <span className="truncate">{item.label}</span>}
 
-              {/* Badges de Alertas */}
-              {item.badge !== null && (
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    collapsed ? "absolute top-1 right-1" : "ml-auto"
-                  } ${item.badgeColor}`}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </button>
+                    {/* Badges de Alertas */}
+                    {item.badge !== null && item.badge !== undefined && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          collapsed ? "absolute top-1 right-1" : "ml-auto"
+                        } ${item.badgeColor}`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </>
+                );
+              }}
+            </NavLink>
           );
         })}
       </nav>
 
-      {/* Sessão do Usuário no Rodapé (Clicável para Edição de Perfil) */}
+      {/* Sessão do Usuário no Rodapé */}
       {currentUser && (
         <div className="p-3 border-t border-teal-900/40 bg-[#010e14]">
           <div
@@ -148,15 +173,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
             title="Clique para editar dados cadastrais do perfil"
           >
-            <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="flex items-center gap-2.5 overflow-hidden min-w-0">
               <div className="w-8 h-8 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/40 flex items-center justify-center font-bold text-xs shrink-0">
                 {currentUser.nome ? currentUser.nome.charAt(0).toUpperCase() : "U"}
               </div>
               {!collapsed && (
-                <div className="truncate">
+                <div className="truncate min-w-0 flex-1">
                   <p className="text-xs font-bold text-teal-100 truncate flex items-center gap-1">
                     {currentUser.role === 'admin' && <Shield className="w-3 h-3 text-amber-400 shrink-0" />}
-                    <span>{currentUser.nome}</span>
+                    <span className="truncate">{currentUser.nome}</span>
                     {onOpenProfile && <UserCheck className="w-3 h-3 text-teal-400 shrink-0 ml-0.5" />}
                   </p>
                   <p className="text-[10px] text-teal-300/60 truncate capitalize">
@@ -172,7 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   e.stopPropagation();
                   onLogout();
                 }}
-                className="p-1.5 text-teal-300/60 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer shrink-0"
+                className="p-1.5 text-teal-300/60 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer shrink-0 ml-1"
                 title="Sair do sistema"
               >
                 <LogOut className="w-4 h-4" />

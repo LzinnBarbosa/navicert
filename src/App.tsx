@@ -131,13 +131,14 @@ function MainLayout() {
         setCertificates(certsConsolidados);
       }
 
-      // 2. Busca usuários e perfis atualizados no Supabase
+      // 2. Busca usuários e perfis atualizados com Trava Anti-Logout
       const dbUsers = await fetchUsersFromSupabase();
-      if (dbUsers.length > 0) {
+      if (Array.isArray(dbUsers) && dbUsers.length > 0) {
         setUsers(dbUsers);
         setCurrentUser((prevUser) => {
           if (!prevUser) return null;
-          const me = dbUsers.find((u) => String(u.id) === String(prevUser.id));
+          // Proteção: preserva o usuário ativo mesmo se a busca retornar IDs levemente alterados
+          const me = dbUsers.find((u) => String(u.id) === String(prevUser.id) || u.email === prevUser.email);
           return me ? me : prevUser;
         });
       }
@@ -160,7 +161,6 @@ function MainLayout() {
       try {
         const localData = StorageService.init();
         if (localData.currentUser) {
-          // Se a sessão local excedeu 30 min sem interação, faz logout limpo
           if (StorageService.isSessionExpired(30)) {
             StorageService.logout();
             setCurrentUser(null);
@@ -180,9 +180,7 @@ function MainLayout() {
     carregarDadosIniciais();
   }, [sincronizarTodosOsDados]);
 
-  // ---------------------------------------------------------------------------
-  // INSCRIÇÃO WEBSOCKET EM TEMPO REAL (REALTIME)
-  // ---------------------------------------------------------------------------
+  // Realtime Supabase WebSockets
   useEffect(() => {
     if (!currentUser) return;
 
@@ -195,9 +193,7 @@ function MainLayout() {
     };
   }, [currentUser, sincronizarTodosOsDados]);
 
-  // ---------------------------------------------------------------------------
-  // TIMEOUT DE INATIVIDADE (30 MINUTOS VIA STORAGE SERVICE COM THROTTLE)
-  // ---------------------------------------------------------------------------
+  // Timeout de Inatividade (30 minutos)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -215,7 +211,6 @@ function MainLayout() {
         return;
       }
 
-      // Throttle: grava no storage no máximo 1 vez a cada 10 segundos
       if (agora - lastUpdate > 10000) {
         lastUpdate = agora;
         StorageService.updateLastActivity();
@@ -268,11 +263,7 @@ function MainLayout() {
     return { vencidos, criticos, atencao };
   }, [certificates, config]);
 
-  // ---------------------------------------------------------------------------
-  // HANDLERS ATUALIZADOS COM SUPABASE REALTIME
-  // ---------------------------------------------------------------------------
-  
-  // Atualização do Perfil do Usuário
+  // Handlers
   const handleSaveProfile = async (updatedData: { nome: string; email: string; cargo: string }) => {
     if (!currentUser) return;
     const updatedUser: User = { ...currentUser, ...updatedData };
@@ -288,7 +279,6 @@ function MainLayout() {
     }
   };
 
-  // Salvar / Editar Embarcação
   const handleSaveVessel = async (vessel: Vessel) => {
     try {
       const exists = vessels.some((v) => String(v.id) === String(vessel.id));
@@ -306,7 +296,6 @@ function MainLayout() {
     }
   };
 
-  // Deletar Embarcação
   const handleDeleteVessel = async (vesselId: string) => {
     const vessel = vessels.find((v) => String(v.id) === String(vesselId));
     if (!vessel) return;
@@ -326,7 +315,6 @@ function MainLayout() {
     }
   };
 
-  // Salvar / Editar Certificado
   const handleSaveCertificate = async (cert: Partial<Certificate>) => {
     try {
       const exists = cert.id && certificates.some((c) => String(c.id) === String(cert.id));
@@ -344,7 +332,6 @@ function MainLayout() {
     }
   };
 
-  // Deletar Certificado
   const handleDeleteCertificate = async (certId: string) => {
     const cert = certificates.find((c) => String(c.id) === String(certId));
     if (!cert) return;
@@ -361,7 +348,6 @@ function MainLayout() {
     }
   };
 
-  // Salvar Configurações da Empresa
   const handleSaveConfig = async (newConfig: PrazosConfig) => {
     try {
       await saveConfigToSupabase(newConfig);
@@ -389,7 +375,6 @@ function MainLayout() {
     showToast("Backup importado com sucesso.");
   };
 
-  // Gerenciamento de Usuários (Admin)
   const handleUpdateUserRole = async (userId: string, newRole: "admin" | "operador" | "auditor") => {
     const target = users.find((u) => u.id === userId);
     if (!target) return;
@@ -417,17 +402,29 @@ function MainLayout() {
     await sincronizarTodosOsDados();
   };
 
+  // EXCLUSÃO PROTEGIDA DE USUÁRIOS
   const handleDeleteUser = async (userId: string) => {
-    const user = users.find((u) => u.id === userId);
+    const user = users.find((u) => String(u.id) === String(userId));
     if (!user) return;
+
+    if (String(user.id) === String(currentUser?.id) || user.email === currentUser?.email) {
+      alert("Ação negada: Você não pode excluir sua própria conta de Administrador logada.");
+      return;
+    }
+
     if (window.confirm(`Excluir permanentemente o usuário "${user.nome}" (${user.email})?`)) {
-      await deleteUserFromSupabase(userId);
-      showToast(`Usuário "${user.nome}" excluído do Supabase.`);
-      await sincronizarTodosOsDados();
+      try {
+        await deleteUserFromSupabase(userId);
+        setUsers((prev) => prev.filter((u) => String(u.id) !== String(userId)));
+        showToast(`Usuário "${user.nome}" excluído do Supabase.`);
+        await sincronizarTodosOsDados();
+      } catch (err: any) {
+        showToast(`Erro ao excluir perfil: ${err.message || "Erro de permissão no Supabase"}`);
+      }
     }
   };
 
-  // Renderização: Login se não autenticado
+  // Renderização: Auth View
   if (!currentUser) {
     return (
       <AuthView
@@ -442,7 +439,7 @@ function MainLayout() {
     );
   }
 
-  // Renderização: Tela de Carregamento Inicial
+  // Renderização: Loading State
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-[#031923] text-teal-200">
@@ -474,7 +471,7 @@ function MainLayout() {
         empresaNome={config.empresa_nome}
       />
 
-      {/* 2. ÁREA DE CONTEÚDO PRINCIPAL COM ROTEAMENTO */}
+      {/* 2. ÁREA PRINCIPAL */}
       <div className="flex-1 flex flex-col h-screen overflow-y-auto no-scrollbar">
         
         <TopBar
@@ -498,11 +495,7 @@ function MainLayout() {
 
         <main className="flex-1 max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
-            <Route
-              path="/"
-              element={<Navigate to="/painel" replace />}
-            />
-
+            <Route path="/" element={<Navigate to="/painel" replace />} />
             <Route
               path="/painel"
               element={
@@ -523,7 +516,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/embarcacoes"
               element={
@@ -552,7 +544,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/certificados"
               element={
@@ -577,7 +568,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/alertas"
               element={
@@ -594,7 +584,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/relatorios"
               element={
@@ -606,7 +595,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/consultor-ia"
               element={
@@ -618,7 +606,6 @@ function MainLayout() {
                 />
               }
             />
-
             <Route
               path="/usuarios"
               element={
@@ -638,7 +625,6 @@ function MainLayout() {
                 )
               }
             />
-
             <Route
               path="/configuracoes"
               element={
@@ -652,12 +638,7 @@ function MainLayout() {
                 />
               }
             />
-
-            {/* Fallback para rotas desconhecidas */}
-            <Route
-              path="*"
-              element={<Navigate to="/painel" replace />}
-            />
+            <Route path="*" element={<Navigate to="/painel" replace />} />
           </Routes>
         </main>
 
