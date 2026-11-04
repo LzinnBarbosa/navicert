@@ -86,7 +86,7 @@ export const CertificatesView: React.FC<CertificatesViewProps> = ({
   const filteredCerts = certificates.filter((c) => {
     const vessel = vesselMap.get(c.vessel_id);
     const vesselName = vessel ? vessel.nome.toLowerCase() : "";
-    const vesselInscricao = vessel ? vessel.inscricao.toLowerCase() : "";
+    const vesselInscricao = vessel ? (vessel.inscricao || "").toLowerCase() : "";
     const certNum = (c.numero || "").toLowerCase();
     const orgao = (c.orgao_emissor || "").toLowerCase();
     const respTecnico = (c.responsavel_tecnico || "").toLowerCase();

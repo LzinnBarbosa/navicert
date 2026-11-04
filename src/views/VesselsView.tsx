@@ -21,13 +21,15 @@ import { statusCertificado, compararNomesEmbarcacoes } from "../lib/maritime-uti
 
 // Lista padronizada de categorias de exibição na tela
 const CATEGORIAS_FROTA = [
-  "EMPURRADOR FLUVIAL",
+  "EMPURRADOR",
+  "BALSA / CARGA GERAL",
   "REBOCADOR",
-  "BALSA",
   "PETROLEIRA",
-  "MÓDULO",
-  "RAMPAS",
+  "LANCHA",
+  "BALSA TANQUE / COMBUSTÍVEL",
   "DIQUE FLUTUANTE",
+  "MÓDULO FLUTUANTE",
+  "BARCAÇA",
 ] as const;
 
 interface VesselsViewProps {
@@ -83,7 +85,7 @@ export const VesselsView: React.FC<VesselsViewProps> = ({
       if (!q) return true;
       return (
         v.nome.toLowerCase().includes(q) ||
-        v.inscricao.toLowerCase().includes(q) ||
+        (v.inscricao || "").toLowerCase().includes(q) ||
         (v.proprietario && v.proprietario.toLowerCase().includes(q)) ||
         (v.construtor && v.construtor.toLowerCase().includes(q))
       );
@@ -287,7 +289,7 @@ export const VesselsView: React.FC<VesselsViewProps> = ({
                                     </h3>
                                   </div>
                                   <p className="text-[11px] text-teal-300/60 mt-1 font-mono">
-                                    Inscrição: <strong className="text-teal-200">{vessel.inscricao}</strong>
+                                    Inscrição: <strong className="text-teal-200">{vessel.inscricao || "—"}</strong>
                                   </p>
                                 </div>
 
@@ -324,11 +326,11 @@ export const VesselsView: React.FC<VesselsViewProps> = ({
                                 <div className="flex items-center justify-between">
                                   <span className="text-teal-300/60">Situação:</span>
                                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    vessel.situacao === 'Ativa' 
+                                    (vessel.situacao || 'Ativa') === 'Ativa' 
                                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60' 
                                       : 'bg-amber-950 text-amber-300 border border-amber-800/60'
                                   }`}>
-                                    {vessel.situacao}
+                                    {vessel.situacao || 'Ativa'}
                                   </span>
                                 </div>
 
@@ -336,7 +338,7 @@ export const VesselsView: React.FC<VesselsViewProps> = ({
                                   <span className="text-teal-300/60 block text-[10px]">Proprietário / Armador:</span>
                                   <span className="text-teal-100 font-medium truncate flex items-center gap-1">
                                     <Building2 className="w-3 h-3 text-cyan-400 shrink-0" />
-                                    <span className="truncate">{vessel.proprietario || "Não informado"}</span>
+                                    <span className="truncate">{vessel.proprietario || vessel.armador || "Não informado"}</span>
                                   </span>
                                 </div>
 

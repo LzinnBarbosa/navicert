@@ -3,15 +3,17 @@ import { X, Ship, Save, Building, Hammer } from "lucide-react";
 import { Vessel, SituacaoEmbarcacao } from "../types/maritime";
 import { SITUACOES_EMBARCACAO, sanitizeInput } from "../lib/maritime-utils";
 
-// Lista oficial de tipos de embarcação padronizados
-export const TIPOS_EMBARCACAO_PADRAO = [
-  "Empurrador Fluvial",
+// --- LISTA DE TIPOS DE EMBARCAÇÃO ---
+export const TIPOS_EMBARCACAO = [
+  "Empurrador",
+  "Balsa / Carga Geral",
   "Rebocador",
-  "Balsa",
   "Petroleira",
-  "Módulo",
-  "Rampas",
-  "Dique Flutuante"
+  "Lancha",
+  "Balsa Tanque / Combustível",
+  "Dique Flutuante",
+  "Módulo Flutuante",
+  "Barcaça",
 ] as const;
 
 interface VesselModalProps {
@@ -30,7 +32,7 @@ export const VesselModal: React.FC<VesselModalProps> = ({
   // Função auxiliar para associar tipos antigos ou digitados em minúsculo com o padrão
   const normalizarTipoEmbarcacao = (tipoOriginal?: string): string => {
     if (!tipoOriginal) return "Empurrador Fluvial";
-    const encontrado = TIPOS_EMBARCACAO_PADRAO.find(
+    const encontrado = TIPOS_EMBARCACAO.find(
       (t) => t.toLowerCase().trim() === tipoOriginal.toLowerCase().trim()
     );
     return encontrado || tipoOriginal;
@@ -199,7 +201,7 @@ export const VesselModal: React.FC<VesselModalProps> = ({
                 onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
                 className="w-full px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white focus:outline-hidden focus:ring-2 focus:ring-sky-500 cursor-pointer"
               >
-                {TIPOS_EMBARCACAO_PADRAO.map((tipo) => (
+                {TIPOS_EMBARCACAO.map((tipo) => (
                   <option key={tipo} value={tipo} className="bg-slate-900 text-white py-1">
                     {tipo}
                   </option>

@@ -28,6 +28,7 @@ export interface UserPermissions {
   can_export_reports?: boolean;
   can_access_ai?: boolean;
   can_manage_users?: boolean;
+  can_manage_settings?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -62,10 +63,13 @@ export interface User {
 }
 
 // ---------------------------------------------------------------------------
-// 3. EMBARCAÇÕES E CERTIFICADOS
+// 3. EMBARCAÇÕES, CERTIFICADOS E TIPOS ASSOCIADOS
 // ---------------------------------------------------------------------------
 
+export type CertTipo = string;
 export type CertStatus = 'vencido' | 'critico' | 'atencao' | 'valido';
+export type SituacaoEmbarcacao = 'Ativa' | 'Em Manutenção' | 'Em Doca' | 'Parada' | string;
+export type TipoVistoria = 'Inicial' | 'Anual' | 'Intermediária' | 'Periódica' | 'Renovação' | string;
 
 export interface Vessel {
   id: string;
@@ -74,33 +78,70 @@ export interface Vessel {
   imo?: string;
   inscricao?: string;
   bandeira?: string;
-  ano_construcao?: number;
+  ano_construcao?: number | string;
+  proprietario?: string;
+  armador?: string;
+  construtor?: string;
+  situacao?: SituacaoEmbarcacao;
+  trecho?: string;
+  arqueacao_bruta?: string | number;
+  porto_inscricao?: string;
+  documento_propriedade?: string;
+  indicativo_chamada?: string;
   created_at?: string;
 }
 
 export interface Certificate {
   id: string;
   vessel_id: string;
+  embarcacao_id?: string;
   tipo: string;
   numero?: string;
-  tipo_vistoria?: string;
   data_emissao?: string;
   data_validade: string;
+  vencimento?: string;
+  janela_inicio?: string;
   orgao_emissor?: string;
   observacoes?: string;
+  tipo_vistoria?: TipoVistoria;
+  categoria?: string;
+  url_documento?: string;
+  arquivo_anexo_url?: string;
+  arquivo_path?: string;
+  path_documento?: string;
+  responsavel_tecnico?: string;
+  tipo_teste?: string;
+  numero_art?: string;
+  tracao_estatica_ton?: string | number;
+  pressao_teste?: string | number;
+  lacre_tag?: string;
+  local_compensacao?: string;
   created_at?: string;
 }
 
 // ---------------------------------------------------------------------------
-// 4. CONFIGURAÇÕES DA EMPRESA
+// 4. CONFIGURAÇÕES DA EMPRESA E RELATÓRIOS
 // ---------------------------------------------------------------------------
 
 export interface PrazosConfig {
   empresa_nome: string;
-  alerta_amarelo_dias?: number;
-  alerta_vermelho_dias?: number;
+  responsavel_tecnico?: string;
+  registro_crea?: string;
+  email_notificacao?: string;
   dias_critico?: number;
   dias_atencao?: number;
+  alerta_amarelo_dias?: number;
+  alerta_vermelho_dias?: number;
+  prazo_critico_dias?: number;
+  prazo_atencao_dias?: number;
+  [key: string]: any;
+}
+
+export interface FiltrosRelatorio {
+  tipoRelatorio: 'CONSOLIDADO' | 'CADASTRO' | 'CERTIFICADOS' | 'TERMO_TECNICO' | 'INDIVIDUAL' | string;
+  armador: string;
+  tipoEmbarcacao: string;
+  statusValidade?: string;
   [key: string]: any;
 }
 
@@ -147,17 +188,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, UserPermissions> = {
 // --- LISTA DE TIPOS DE EMBARCAÇÃO ---
 export const TIPOS_EMBARCACAO = [
   "Empurrador",
-  "Balsa",
+  "Balsa / Carga Geral",
   "Rebocador",
+  "Petroleira",
   "Lancha",
-  "Carga Geral",
-  "Passageiros",
-  "Ferry-boat",
   "Balsa Tanque / Combustível",
-  "Flutuante / Dique",
+  "Dique Flutuante",
+  "Módulo Flutuante",
   "Barcaça",
-  "Draga",
-  "Pesqueiro",
-  "Apoio Marítimo / Off-shore",
-  "Outro"
 ] as const;
