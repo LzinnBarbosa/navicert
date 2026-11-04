@@ -33,7 +33,8 @@ const safeStorage = {
 
 export class StorageService {
   private static LAST_ACTIVITY_KEY = 'navcert_last_activity';
-  private static TIMEOUT_MS = 30 * 60 * 1000; // 30 Minutos
+  private static CURRENT_USER_KEY = 'navcert_current_user';
+  private static CONFIG_KEY = 'navcert_config';
 
   // ---------------------------------------------------------------------------
   // 1. GESTÃO DE SESSÃO LOCAL SEGURO E INATIVIDADE
@@ -41,7 +42,7 @@ export class StorageService {
 
   static init(): { currentUser: User | null } {
     try {
-      const userRaw = safeStorage.getItem('navcert_current_user');
+      const userRaw = safeStorage.getItem(this.CURRENT_USER_KEY);
       return { currentUser: userRaw ? JSON.parse(userRaw) : null };
     } catch {
       return { currentUser: null };
@@ -71,18 +72,18 @@ export class StorageService {
   }
 
   static saveCurrentUser(user: User): void {
-    safeStorage.setItem('navcert_current_user', JSON.stringify(user));
+    safeStorage.setItem(this.CURRENT_USER_KEY, JSON.stringify(user));
     this.updateLastActivity();
   }
 
   static logout(): void {
-    safeStorage.removeItem('navcert_current_user');
+    safeStorage.removeItem(this.CURRENT_USER_KEY);
     safeStorage.removeItem(this.LAST_ACTIVITY_KEY);
     supabase.auth.signOut();
   }
 
   static saveConfig(config: PrazosConfig): void {
-    safeStorage.setItem('navcert_config', JSON.stringify(config));
+    safeStorage.setItem(this.CONFIG_KEY, JSON.stringify(config));
   }
 
   static resetToDefaults(): { vessels: Vessel[]; certificates: Certificate[]; config: PrazosConfig } {

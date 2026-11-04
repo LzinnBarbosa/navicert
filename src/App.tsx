@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { 
+  BrowserRouter, 
+  Routes, 
+  Route, 
+  useNavigate, 
+  useLocation, 
+  Navigate 
+} from "react-router-dom";
+import { 
   Vessel, 
   Certificate, 
   PrazosConfig, 
@@ -9,7 +17,6 @@ import {
 } from "./types/maritime";
 import { StorageService } from "./services/storage";
 import { statusCertificado, PRAZOS_PADRAO } from "./lib/maritime-utils";
-import { supabase } from "./lib/supabaseClient";
 import {
   fetchUsersFromSupabase,
   saveUserProfileToSupabase,
@@ -37,14 +44,51 @@ import { SettingsView } from "./views/SettingsView";
 import { UsersView } from "./views/UsersView";
 import { Anchor, ShieldCheck, Loader2 } from "lucide-react";
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("painel");
+// Mapeamento bidirecional entre URL e a aba do sistema
+const ROUTE_MAP: Record<string, ActiveTab> = {
+  "/": "painel",
+  "/painel": "painel",
+  "/embarcacoes": "embarcacoes",
+  "/certificados": "certificados",
+  "/alertas": "alertas",
+  "/relatorios": "relatorios",
+  "/consultor-ia": "consultor",
+  "/usuarios": "usuarios",
+  "/configuracoes": "configuracoes",
+};
+
+const TAB_TO_ROUTE_MAP: Record<ActiveTab, string> = {
+  painel: "/painel",
+  embarcacoes: "/embarcacoes",
+  certificados: "/certificados",
+  alertas: "/alertas",
+  relatorios: "/relatorios",
+  consultor: "/consultor-ia",
+  usuarios: "/usuarios",
+  configuracoes: "/configuracoes",
+};
+
+function MainLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [vessels, setVessels] = useState<Vessel[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [config, setConfig] = useState<PrazosConfig>(PRAZOS_PADRAO);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Determina a aba ativa com base no caminho da URL
+  const activeTab: ActiveTab = ROUTE_MAP[location.pathname] || "painel";
+
+  // Função para mudar de aba atualizando a URL
+  const handleNavigateTab = useCallback((tab: ActiveTab) => {
+    const targetRoute = TAB_TO_ROUTE_MAP[tab] || "/painel";
+    if (location.pathname !== targetRoute) {
+      navigate(targetRoute);
+    }
+  }, [location.pathname, navigate]);
 
   // Modais de perfil, embarcação e certificado
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -63,12 +107,11 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     StorageService.logout();
-    localStorage.removeItem("navcert_last_activity");
     setCurrentUser(null);
     showToast("Sessão finalizada por inatividade ou segurança.");
-  };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // CARGA INTEGRADA E RECURSIVA DO BANCO DE DADOS (SUPABASE)
@@ -114,27 +157,16 @@ export default function App() {
     const carregarDadosIniciais = async () => {
       setIsLoading(true);
 
-      const VERSION_TAG = "navcert_prod_v4";
-      if (localStorage.getItem("navcert_app_version") !== VERSION_TAG) {
-        localStorage.removeItem("navcert_vessels");
-        localStorage.removeItem("navcert_certificates");
-        localStorage.setItem("navcert_app_version", VERSION_TAG);
-      }
-
       try {
         const localData = StorageService.init();
         if (localData.currentUser) {
-          const lastAct = localStorage.getItem("navcert_last_activity");
-          const TIMEOUT_MS = 30 * 60 * 1000;
-          
-          // Se a sessão guardada no localStorage ultrapassou 30min, efetua logout silencioso na inicialização
-          if (lastAct && Date.now() - parseInt(lastAct, 10) > TIMEOUT_MS) {
+          // Se a sessão local excedeu 30 min sem interação, faz logout limpo
+          if (StorageService.isSessionExpired(30)) {
             StorageService.logout();
-            localStorage.removeItem("navcert_last_activity");
             setCurrentUser(null);
           } else {
+            StorageService.updateLastActivity();
             setCurrentUser(localData.currentUser);
-            localStorage.setItem("navcert_last_activity", Date.now().toString());
           }
         }
         await sincronizarTodosOsDados();
@@ -164,69 +196,65 @@ export default function App() {
   }, [currentUser, sincronizarTodosOsDados]);
 
   // ---------------------------------------------------------------------------
-  // TIMEOUT DE INATIVIDADE (30 MINUTOS VIA TIMESTAMP)
+  // TIMEOUT DE INATIVIDADE (30 MINUTOS VIA STORAGE SERVICE COM THROTTLE)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!currentUser) return;
 
-    const TIMEOUT_MS = 30 * 60 * 1000;
-    const LAST_ACTIVITY_KEY = "navcert_last_activity";
-
-    const verificarExpiracaoSessao = () => {
-      const ultimaAtividade = localStorage.getItem(LAST_ACTIVITY_KEY);
-      const agora = Date.now();
-
-      if (ultimaAtividade && agora - parseInt(ultimaAtividade, 10) > TIMEOUT_MS) {
-        console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
-        handleLogout();
-        return false;
-      }
-
-      localStorage.setItem(LAST_ACTIVITY_KEY, agora.toString());
-      return true;
-    };
-
-    if (!verificarExpiracaoSessao()) return;
+    StorageService.updateLastActivity();
 
     let timeoutId: NodeJS.Timeout;
+    let lastUpdate = Date.now();
 
-    const resetTimer = () => {
-      const ultimaAtividade = localStorage.getItem(LAST_ACTIVITY_KEY);
+    const renovarAtividade = () => {
       const agora = Date.now();
 
-      if (ultimaAtividade && agora - parseInt(ultimaAtividade, 10) > TIMEOUT_MS) {
+      if (StorageService.isSessionExpired(30)) {
         console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
         handleLogout();
         return;
       }
 
-      localStorage.setItem(LAST_ACTIVITY_KEY, agora.toString());
+      // Throttle: grava no storage no máximo 1 vez a cada 10 segundos
+      if (agora - lastUpdate > 10000) {
+        lastUpdate = agora;
+        StorageService.updateLastActivity();
+      }
 
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
         handleLogout();
-      }, TIMEOUT_MS);
+      }, 30 * 60 * 1000);
     };
 
+    timeoutId = setTimeout(() => {
+      console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
+      handleLogout();
+    }, 30 * 60 * 1000);
+
     const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"];
-    events.forEach((event) => window.addEventListener(event, resetTimer, { passive: true }));
+    events.forEach((event) => window.addEventListener(event, renovarAtividade, { passive: true }));
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        verificarExpiracaoSessao();
+        if (StorageService.isSessionExpired(30)) {
+          console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
+          handleLogout();
+        } else {
+          StorageService.updateLastActivity();
+        }
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    resetTimer();
 
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
-      events.forEach((event) => window.removeEventListener(event, resetTimer));
+      events.forEach((event) => window.removeEventListener(event, renovarAtividade));
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [currentUser]);
+  }, [currentUser, handleLogout]);
 
   // Resumo de Alertas
   const alertCount = React.useMemo(() => {
@@ -404,7 +432,6 @@ export default function App() {
     return (
       <AuthView
         onLoginSuccess={async (user) => {
-          localStorage.setItem("navcert_last_activity", Date.now().toString());
           StorageService.saveCurrentUser(user);
           setCurrentUser(user);
           const userList = await StorageService.getUsers();
@@ -439,7 +466,7 @@ export default function App() {
       {/* 1. SIDEBAR LATERAL */}
       <Sidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleNavigateTab}
         alertCount={alertCount}
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -447,12 +474,12 @@ export default function App() {
         empresaNome={config.empresa_nome}
       />
 
-      {/* 2. ÁREA DE CONTEÚDO PRINCIPAL */}
+      {/* 2. ÁREA DE CONTEÚDO PRINCIPAL COM ROTEAMENTO */}
       <div className="flex-1 flex flex-col h-screen overflow-y-auto no-scrollbar">
         
         <TopBar
           alertVencidosCount={alertCount.vencidos}
-          onOpenAlerts={() => setActiveTab("alertas")}
+          onOpenAlerts={() => handleNavigateTab("alertas")}
           onNewCertificate={() => {
             setCertToEdit(null);
             setDefaultVesselIdForCert(undefined);
@@ -463,138 +490,175 @@ export default function App() {
             setIsVesselModalOpen(true);
           }}
           onPrint={() => {
-            setActiveTab("relatorios");
+            handleNavigateTab("relatorios");
             setTimeout(() => window.print(), 300);
           }}
           currentUser={currentUser}
         />
 
         <main className="flex-1 max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {activeTab === "painel" && (
-            <DashboardView
-              vessels={vessels}
-              certificates={certificates}
-              config={config}
-              onNavigate={setActiveTab}
-              onSelectVessel={(v) => setSelectedVesselForDetail(v)}
-              onNewCertificate={() => {
-                setCertToEdit(null);
-                setIsCertModalOpen(true);
-              }}
-              onNewVessel={() => {
-                setVesselToEdit(null);
-                setIsVesselModalOpen(true);
-              }}
+          <Routes>
+            <Route
+              path="/"
+              element={<Navigate to="/painel" replace />}
             />
-          )}
 
-          {activeTab === "embarcacoes" && (
-            <VesselsView
-              vessels={vessels}
-              certificates={certificates}
-              config={config}
-              onNewVessel={() => {
-                setVesselToEdit(null);
-                setIsVesselModalOpen(true);
-              }}
-              onEditVessel={(v) => {
-                setVesselToEdit(v);
-                setIsVesselModalOpen(true);
-              }}
-              onDeleteVessel={handleDeleteVessel}
-              onSelectVessel={(v) => setSelectedVesselForDetail(v)}
-              onAddCertificate={(vesselId) => {
-                setCertToEdit(null);
-                setDefaultVesselIdForCert(vesselId);
-                setIsCertModalOpen(true);
-              }}
-              canCreate={currentUser.role === "admin" || (currentUser.permissions?.can_create_vessel ?? false)}
-              canEdit={currentUser.role === "admin" || (currentUser.permissions?.can_edit_vessel ?? false)}
-              canDelete={currentUser.role === "admin" || (currentUser.permissions?.can_delete_vessel ?? false)}
+            <Route
+              path="/painel"
+              element={
+                <DashboardView
+                  vessels={vessels}
+                  certificates={certificates}
+                  config={config}
+                  onNavigate={handleNavigateTab}
+                  onSelectVessel={(v) => setSelectedVesselForDetail(v)}
+                  onNewCertificate={() => {
+                    setCertToEdit(null);
+                    setIsCertModalOpen(true);
+                  }}
+                  onNewVessel={() => {
+                    setVesselToEdit(null);
+                    setIsVesselModalOpen(true);
+                  }}
+                />
+              }
             />
-          )}
 
-          {activeTab === "certificados" && (
-            <CertificatesView
-              certificates={certificates}
-              vessels={vessels}
-              config={config}
-              onNewCertificate={() => {
-                setCertToEdit(null);
-                setDefaultVesselIdForCert(undefined);
-                setIsCertModalOpen(true);
-              }}
-              onEditCertificate={(c) => {
-                setCertToEdit(c);
-                setIsCertModalOpen(true);
-              }}
-              onDeleteCertificate={handleDeleteCertificate}
-              onSelectVessel={(v) => setSelectedVesselForDetail(v)}
-              canCreate={currentUser.role === "admin" || (currentUser.permissions?.can_create_cert ?? false)}
-              canEdit={currentUser.role === "admin" || (currentUser.permissions?.can_edit_cert ?? false)}
-              canDelete={currentUser.role === "admin" || (currentUser.permissions?.can_delete_cert ?? false)}
+            <Route
+              path="/embarcacoes"
+              element={
+                <VesselsView
+                  vessels={vessels}
+                  certificates={certificates}
+                  config={config}
+                  onNewVessel={() => {
+                    setVesselToEdit(null);
+                    setIsVesselModalOpen(true);
+                  }}
+                  onEditVessel={(v) => {
+                    setVesselToEdit(v);
+                    setIsVesselModalOpen(true);
+                  }}
+                  onDeleteVessel={handleDeleteVessel}
+                  onSelectVessel={(v) => setSelectedVesselForDetail(v)}
+                  onAddCertificate={(vesselId) => {
+                    setCertToEdit(null);
+                    setDefaultVesselIdForCert(vesselId);
+                    setIsCertModalOpen(true);
+                  }}
+                  canCreate={currentUser.role === "admin" || (currentUser.permissions?.can_create_vessel ?? false)}
+                  canEdit={currentUser.role === "admin" || (currentUser.permissions?.can_edit_vessel ?? false)}
+                  canDelete={currentUser.role === "admin" || (currentUser.permissions?.can_delete_vessel ?? false)}
+                />
+              }
             />
-          )}
 
-          {activeTab === "alertas" && (
-            <AlertsView
-              certificates={certificates}
-              vessels={vessels}
-              config={config}
-              onEditCertificate={(c) => {
-                setCertToEdit(c);
-                setIsCertModalOpen(true);
-              }}
-              onSelectVessel={(v) => setSelectedVesselForDetail(v)}
-              onNavigate={setActiveTab}
+            <Route
+              path="/certificados"
+              element={
+                <CertificatesView
+                  certificates={certificates}
+                  vessels={vessels}
+                  config={config}
+                  onNewCertificate={() => {
+                    setCertToEdit(null);
+                    setDefaultVesselIdForCert(undefined);
+                    setIsCertModalOpen(true);
+                  }}
+                  onEditCertificate={(c) => {
+                    setCertToEdit(c);
+                    setIsCertModalOpen(true);
+                  }}
+                  onDeleteCertificate={handleDeleteCertificate}
+                  onSelectVessel={(v) => setSelectedVesselForDetail(v)}
+                  canCreate={currentUser.role === "admin" || (currentUser.permissions?.can_create_cert ?? false)}
+                  canEdit={currentUser.role === "admin" || (currentUser.permissions?.can_edit_cert ?? false)}
+                  canDelete={currentUser.role === "admin" || (currentUser.permissions?.can_delete_cert ?? false)}
+                />
+              }
             />
-          )}
 
-          {activeTab === "relatorios" && (
-            <ReportsView
-              vessels={vessels}
-              certificates={certificates}
-              config={config}
-              canExport={currentUser.role === "admin" || (currentUser.permissions?.can_export_reports ?? false)}
+            <Route
+              path="/alertas"
+              element={
+                <AlertsView
+                  certificates={certificates}
+                  vessels={vessels}
+                  config={config}
+                  onEditCertificate={(c) => {
+                    setCertToEdit(c);
+                    setIsCertModalOpen(true);
+                  }}
+                  onSelectVessel={(v) => setSelectedVesselForDetail(v)}
+                  onNavigate={handleNavigateTab}
+                />
+              }
             />
-          )}
 
-          {activeTab === "consultor" && (
-            <ConsultantView
-              vessels={vessels}
-              certificates={certificates}
-              config={config}
-              canAccessAI={currentUser.role === "admin" || (currentUser.permissions?.can_access_ai ?? false)}
+            <Route
+              path="/relatorios"
+              element={
+                <ReportsView
+                  vessels={vessels}
+                  certificates={certificates}
+                  config={config}
+                  canExport={currentUser.role === "admin" || (currentUser.permissions?.can_export_reports ?? false)}
+                />
+              }
             />
-          )}
 
-          {activeTab === "usuarios" && (
-            (currentUser.role === "admin" || currentUser.permissions?.can_manage_users) ? (
-              <UsersView
-                users={users}
-                currentUser={currentUser}
-                onUpdateRole={handleUpdateUserRole}
-                onUpdatePermissions={handleUpdateUserPermissions}
-                onToggleBlocked={handleToggleUserBlocked}
-                onDeleteUser={handleDeleteUser}
-              />
-            ) : (
-              <div className="py-16 text-center text-teal-300/60 text-xs">
-                Acesso restrito ao Administrador do Sistema.
-              </div>
-            )
-          )}
-
-          {activeTab === "configuracoes" && (
-            <SettingsView
-              config={config}
-              onSaveConfig={handleSaveConfig}
-              onResetDefaults={handleResetDefaults}
-              onDataImported={handleDataImported}
-              currentUser={currentUser}
-              onLogout={handleLogout}
+            <Route
+              path="/consultor-ia"
+              element={
+                <ConsultantView
+                  vessels={vessels}
+                  certificates={certificates}
+                  config={config}
+                  canAccessAI={currentUser.role === "admin" || (currentUser.permissions?.can_access_ai ?? false)}
+                />
+              }
             />
-          )}
+
+            <Route
+              path="/usuarios"
+              element={
+                (currentUser.role === "admin" || currentUser.permissions?.can_manage_users) ? (
+                  <UsersView
+                    users={users}
+                    currentUser={currentUser}
+                    onUpdateRole={handleUpdateUserRole}
+                    onUpdatePermissions={handleUpdateUserPermissions}
+                    onToggleBlocked={handleToggleUserBlocked}
+                    onDeleteUser={handleDeleteUser}
+                  />
+                ) : (
+                  <div className="py-16 text-center text-teal-300/60 text-xs">
+                    Acesso restrito ao Administrador do Sistema.
+                  </div>
+                )
+              }
+            />
+
+            <Route
+              path="/configuracoes"
+              element={
+                <SettingsView
+                  config={config}
+                  onSaveConfig={handleSaveConfig}
+                  onResetDefaults={handleResetDefaults}
+                  onDataImported={handleDataImported}
+                  currentUser={currentUser}
+                  onLogout={handleLogout}
+                />
+              }
+            />
+
+            {/* Fallback para rotas desconhecidas */}
+            <Route
+              path="*"
+              element={<Navigate to="/painel" replace />}
+            />
+          </Routes>
         </main>
 
         <footer className="border-t border-teal-900/40 bg-[#02131b] py-5 text-xs text-teal-300/60 mt-auto no-print">
@@ -657,7 +721,7 @@ export default function App() {
 
       <SupportChatWidget
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleNavigateTab}
         onOpenProfile={() => setIsProfileModalOpen(true)}
         onNewVessel={() => {
           setVesselToEdit(null);
@@ -670,5 +734,13 @@ export default function App() {
         }}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <MainLayout />
+    </BrowserRouter>
   );
 }
