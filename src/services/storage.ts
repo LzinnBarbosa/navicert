@@ -32,8 +32,11 @@ const safeStorage = {
 };
 
 export class StorageService {
+  private static LAST_ACTIVITY_KEY = 'navcert_last_activity';
+  private static TIMEOUT_MS = 30 * 60 * 1000; // 30 Minutos
+
   // ---------------------------------------------------------------------------
-  // 1. GESTÃO DE SESSÃO LOCAL SEGURO
+  // 1. GESTÃO DE SESSÃO LOCAL SEGURO E INATIVIDADE
   // ---------------------------------------------------------------------------
 
   static init(): { currentUser: User | null } {
@@ -45,13 +48,36 @@ export class StorageService {
     }
   }
 
+  /**
+   * Renova o timestamp da última atividade do usuário no armazenamento seguro
+   */
+  static updateLastActivity(): void {
+    safeStorage.setItem(this.LAST_ACTIVITY_KEY, Date.now().toString());
+  }
+
+  /**
+   * Verifica se a sessão atual expirou por inatividade
+   * @param maxMinutes Limite máximo em minutos (padrão: 30)
+   */
+  static isSessionExpired(maxMinutes: number = 30): boolean {
+    const lastAct = safeStorage.getItem(this.LAST_ACTIVITY_KEY);
+    if (!lastAct) return false;
+
+    const timestamp = parseInt(lastAct, 10);
+    if (isNaN(timestamp)) return false;
+
+    const limitMs = maxMinutes * 60 * 1000;
+    return Date.now() - timestamp > limitMs;
+  }
+
   static saveCurrentUser(user: User): void {
     safeStorage.setItem('navcert_current_user', JSON.stringify(user));
+    this.updateLastActivity();
   }
 
   static logout(): void {
     safeStorage.removeItem('navcert_current_user');
-    safeStorage.removeItem('navcert_last_activity');
+    safeStorage.removeItem(this.LAST_ACTIVITY_KEY);
     supabase.auth.signOut();
   }
 
@@ -134,11 +160,13 @@ export class StorageService {
         }
       }
 
-      // Atualiza o último login no Supabase
+      // Atualiza o último login no Supabase e inicializa a atividade
       await supabase
         .from('profiles')
         .update({ ultimo_login: new Date().toISOString() })
         .eq('id', profile.id);
+
+      this.updateLastActivity();
 
       return { success: true, user: profile as User };
     } catch (err: any) {

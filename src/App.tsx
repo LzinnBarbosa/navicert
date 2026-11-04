@@ -65,6 +65,7 @@ export default function App() {
 
   const handleLogout = () => {
     StorageService.logout();
+    localStorage.removeItem("navcert_last_activity");
     setCurrentUser(null);
     showToast("Sessão finalizada por inatividade ou segurança.");
   };
@@ -91,7 +92,6 @@ export default function App() {
       const dbUsers = await fetchUsersFromSupabase();
       if (dbUsers.length > 0) {
         setUsers(dbUsers);
-        // Atualiza o estado do usuário logado mantendo o nome em tempo real no PC e celular
         setCurrentUser((prevUser) => {
           if (!prevUser) return null;
           const me = dbUsers.find((u) => String(u.id) === String(prevUser.id));
@@ -124,7 +124,18 @@ export default function App() {
       try {
         const localData = StorageService.init();
         if (localData.currentUser) {
-          setCurrentUser(localData.currentUser);
+          const lastAct = localStorage.getItem("navcert_last_activity");
+          const TIMEOUT_MS = 30 * 60 * 1000;
+          
+          // Se a sessão guardada no localStorage ultrapassou 30min, efetua logout silencioso na inicialização
+          if (lastAct && Date.now() - parseInt(lastAct, 10) > TIMEOUT_MS) {
+            StorageService.logout();
+            localStorage.removeItem("navcert_last_activity");
+            setCurrentUser(null);
+          } else {
+            setCurrentUser(localData.currentUser);
+            localStorage.setItem("navcert_last_activity", Date.now().toString());
+          }
         }
         await sincronizarTodosOsDados();
       } catch (err) {
@@ -143,7 +154,6 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Escuta qualquer mudança em qualquer tabela do Supabase e sincroniza a tela instantaneamente
     const unsubscribe = subscribeToGlobalRealtime(() => {
       sincronizarTodosOsDados();
     });
@@ -181,15 +191,26 @@ export default function App() {
     let timeoutId: NodeJS.Timeout;
 
     const resetTimer = () => {
-      if (!verificarExpiracaoSessao()) return;
+      const ultimaAtividade = localStorage.getItem(LAST_ACTIVITY_KEY);
+      const agora = Date.now();
+
+      if (ultimaAtividade && agora - parseInt(ultimaAtividade, 10) > TIMEOUT_MS) {
+        console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
+        handleLogout();
+        return;
+      }
+
+      localStorage.setItem(LAST_ACTIVITY_KEY, agora.toString());
+
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
+        console.warn("🔒 Sessão expirada por inatividade (30+ min). Efetuando logout...");
         handleLogout();
       }, TIMEOUT_MS);
     };
 
     const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"];
-    events.forEach((event) => window.addEventListener(event, resetTimer));
+    events.forEach((event) => window.addEventListener(event, resetTimer, { passive: true }));
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -383,6 +404,7 @@ export default function App() {
     return (
       <AuthView
         onLoginSuccess={async (user) => {
+          localStorage.setItem("navcert_last_activity", Date.now().toString());
           StorageService.saveCurrentUser(user);
           setCurrentUser(user);
           const userList = await StorageService.getUsers();
