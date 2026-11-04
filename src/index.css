@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
+/* Otimização Global do Tailwind v4: Mapeia as cores de todos os componentes TSX */
+@theme {
+  /* Substitui o fundo esverdeado/ciano por Azul Naval Sólido Corporativo */
+  --color-slate-950: #080d1a;
+  --color-slate-900: #0f172a;
+  --color-slate-850: #152033;
+  --color-slate-800: #1e293b;
+  --color-slate-700: #334155;
+
+  /* Redireciona tons de Ciano/Teal para Azul Marítimo B2B */
+  --color-teal-300: #7dd3fc;
+  --color-teal-400: #38bdf8;
+  --color-teal-500: #0284c7;
+  --color-teal-600: #0369a1;
+  --color-teal-800: #1e293b;
+  --color-teal-900: #0f172a;
+
+  /* Ajusta os tons Sky/Sky-Blue */
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0284c7;
+  --color-sky-600: #0369a1;
+}
+
 @layer base {
   :root {
-    /* Fundo Base: Azul Naval Profundo */
     --bg-app: #080d1a;
-    
-    /* Superfícies e Padrões de Elevação Sólidos */
     --bg-card: #0f172a;
     --bg-card-hover: #1e293b;
     --bg-input: #020617;
-    
-    /* Bordas Nítidas (Elimina o efeito neon/borrado) */
+
     --border-subtle: #1e293b;
     --border-active: #0284c7;
 
-    /* Cores Institucionais Sólidas (Sem Gradientes AI) */
     --primary: #0284c7;
     --primary-hover: #0369a1;
     --accent: #d97706;
-    --accent-hover: #b45309;
 
-    /* Indicadores Regulatória e Status (Subtis e Profissionais) */
     --status-valid-bg: rgba(16, 185, 129, 0.1);
     --status-valid-text: #34d399;
     --status-warning-bg: rgba(245, 158, 11, 0.1);
@@ -29,35 +45,42 @@
     --status-expired-text: #f87171;
   }
 
-  body {
-    background-color: var(--bg-app);
+  html, body {
+    background-color: #080d1a !important;
     color: #f8fafc;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 }
 
-/* Substituição da Glassmorphism por Painel Corporativo Nítido */
-.glass-panel, .card-panel {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.75rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+/* Força remoção de fundos verdosos/customizados antigos */
+[class*="bg-[#061b24]"],
+[class*="bg-[#031923]"],
+[class*="bg-[#020e14]"] {
+  background-color: #0f172a !important;
 }
 
-/* Botão Primário Sólido, Limpo e sem Efeito Neon */
+/* Força substituição de bordas esverdeadas antigas */
+[class*="border-teal-900"],
+[class*="border-teal-800"],
+[class*="border-teal-500"] {
+  border-color: #1e293b !important;
+}
+
+/* Botão Primário Corporativo (Sólido, sem efeito neon) */
 .btn-primary {
-  background-color: var(--primary);
-  color: #ffffff;
+  background-color: #0284c7 !important;
+  background-image: none !important;
+  color: #ffffff !important;
   font-weight: 600;
   border-radius: 0.5rem;
-  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
-  border: 1px solid transparent;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: background-color 0.15s ease-in-out;
 }
 
 .btn-primary:hover {
-  background-color: var(--primary-hover);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transform: none; /* Remove a flutuação típica de templates AI */
+  background-color: #0369a1 !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 /* Esconde o contêiner de impressão na tela */
