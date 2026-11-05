@@ -31,6 +31,7 @@ interface DashboardViewProps {
   onSelectVessel: (vessel: Vessel) => void;
   onNewCertificate: () => void;
   onNewVessel: () => void;
+  canCreate?: boolean;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -41,6 +42,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectVessel,
   onNewCertificate,
   onNewVessel,
+  canCreate = true,
 }) => {
   const vesselMap = new Map<string, Vessel>(vessels.map((v) => [v.id, v]));
 
@@ -254,7 +256,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onClick={() => onNavigate("alertas")}
               className="text-xs font-semibold text-sky-400 hover:text-sky-300 underline underline-offset-4 cursor-pointer"
             >
-              Ver todos os alertas &rarr;
+              Ver todos os alertas →
             </button>
           </div>
 
@@ -266,12 +268,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
                   Todos os certificados cadastrados possuem prazo superior a {config.dias_atencao} dias de validade.
                 </p>
-                <button
-                  onClick={onNewCertificate}
-                  className="mt-4 px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
-                >
-                  Registrar novo certificado
-                </button>
+                {canCreate && (
+                  <button
+                    onClick={onNewCertificate}
+                    className="mt-4 px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white cursor-pointer"
+                  >
+                    Registrar novo certificado
+                  </button>
+                )}
               </div>
             ) : (
               urgentList.slice(0, 6).map((cert) => {
