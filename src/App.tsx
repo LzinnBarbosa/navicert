@@ -513,6 +513,7 @@ function MainLayout() {
                     setVesselToEdit(null);
                     setIsVesselModalOpen(true);
                   }}
+                  canCreate={currentUser.role === "admin" || (currentUser.permissions?.can_create_cert ?? false)}
                 />
               }
             />
