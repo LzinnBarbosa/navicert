@@ -34,6 +34,8 @@ import { CertificateFormModal } from "./components/CertificateFormModal";
 import { VesselDetailModal } from "./components/VesselDetailModal";
 import { ProfileModal } from "./components/ProfileModal";
 import { SupportChatWidget } from "./components/SupportChatWidget";
+import { CookieBanner } from "./components/CookieBanner";
+import { LegalModal } from "./components/LegalModal";
 import { DashboardView } from "./views/DashboardView";
 import { VesselsView } from "./views/VesselsView";
 import { CertificatesView } from "./views/CertificatesView";
@@ -90,7 +92,7 @@ function MainLayout() {
     }
   }, [location.pathname, navigate]);
 
-  // Modais de perfil, embarcação e certificado
+  // Modais de perfil, embarcação, certificado e documentos legais
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isVesselModalOpen, setIsVesselModalOpen] = useState(false);
   const [vesselToEdit, setVesselToEdit] = useState<Vessel | null>(null);
@@ -98,6 +100,15 @@ function MainLayout() {
   const [certToEdit, setCertToEdit] = useState<Certificate | null>(null);
   const [defaultVesselIdForCert, setDefaultVesselIdForCert] = useState<string | undefined>(undefined);
   const [selectedVesselForDetail, setSelectedVesselForDetail] = useState<Vessel | null>(null);
+
+  // Modais Legais (Privacidade / Termos)
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [legalModalType, setLegalModalType] = useState<"privacy" | "terms">("privacy");
+
+  const handleOpenLegalModal = (type: "privacy" | "terms") => {
+    setLegalModalType(type);
+    setIsLegalModalOpen(true);
+  };
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -643,17 +654,46 @@ function MainLayout() {
           </Routes>
         </main>
 
-        <footer className="border-t border-teal-900/40 bg-[#02131b] py-5 text-xs text-teal-300/60 mt-auto no-print">
-          <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Anchor className="w-4 h-4 text-teal-400" />
-              <span className="font-semibold text-teal-200">NavCert</span>
-              <span>· Sistema de Gestão Marítima & Conformidade de Frota</span>
+        {/* Rodapé do Sistema com Identificação Jurídica e Links LGPD */}
+        <footer className="border-t border-teal-900/40 bg-[#02131b] py-6 text-xs text-teal-300/60 mt-auto no-print">
+          <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <div className="flex flex-col gap-1 text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-2">
+                <Anchor className="w-4 h-4 text-teal-400" />
+                <span className="font-semibold text-teal-200">NavCert Gestão Marítima</span>
+                <span>· CNPJ: 00.000.000/0001-00</span>
+              </div>
+              <p className="text-[11px] text-teal-300/50">
+                NavCert Tecnologia & Serviços Marítimos Ltda. | Endereço: Av. das Nações, 1000, Sala 201 - Rio de Janeiro/RJ
+              </p>
             </div>
-            <div className="flex items-center gap-4 text-[11px] text-teal-300/50">
-              <span>Privacidade & LGPD Garantidas</span>
-              <span>© {new Date().getFullYear()} Todos os direitos reservados</span>
+
+            <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] text-teal-300/70 font-medium">
+              <button 
+                onClick={() => handleOpenLegalModal("privacy")} 
+                className="hover:text-teal-200 underline cursor-pointer"
+              >
+                Política de Privacidade
+              </button>
+              <span>·</span>
+              <button 
+                onClick={() => handleOpenLegalModal("terms")} 
+                className="hover:text-teal-200 underline cursor-pointer"
+              >
+                Termos de Uso
+              </button>
+              <span>·</span>
+              <a 
+                href="mailto:dpo@navicert.com.br" 
+                className="hover:text-teal-200 underline"
+              >
+                Contato DPO (LGPD)
+              </a>
+              <span>·</span>
+              <span>© {new Date().getFullYear()} NavCert</span>
             </div>
+
           </div>
         </footer>
       </div>
@@ -715,6 +755,14 @@ function MainLayout() {
           setIsCertModalOpen(true);
         }}
       />
+
+      <LegalModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        type={legalModalType}
+      />
+
+      <CookieBanner />
     </div>
   );
 }

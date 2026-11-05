@@ -170,6 +170,14 @@ export const ConsultantView: React.FC<ConsultantViewProps> = ({
         </div>
       </div>
 
+      {/* Aviso Regulatório de Isenção de Responsabilidade Técnica */}
+      <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-700/50 text-amber-200 text-xs flex items-start gap-2.5">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div>
+          <strong>Aviso Importante de Conformidade:</strong> As respostas geradas pela Inteligência Artificial possuem caráter puramente consultivo e informativo para auxílio na NORMAM 202. Elas não substituem pareceres técnicos formais, vistorias oficiais nem documentos emitidos pela Autoridade Marítima (Capitania dos Portos) ou Sociedades Classificadoras credenciadas.
+        </div>
+      </div>
+
       {/* Main Consultation Form */}
       <form onSubmit={(e) => handleEnviar(e)} className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
         {/* Context Vessel Selector */}
